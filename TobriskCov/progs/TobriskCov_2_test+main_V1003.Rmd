@@ -1,0 +1,3634 @@
+---
+title: "Tobrisk analyses - Part II"
+subtitle: "Test and main analyses"
+author: "Zhi Zhou and Sebastián Peña"
+date: "Octorber 3, 2023"
+output:
+  html_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r setup2, include=FALSE}
+# knitr::opts_chunk$set(echo = F
+# )
+knitr::opts_chunk$set(echo = T,
+                      eval = F,
+                      include = T
+)
+```
+
+# Part II
+
+# Loading packages and data
+
+## Packages
+
+```{r packages2}
+# Loading packages
+library(readxl)
+library(haven)
+library(styler)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(tidyr)
+library(janitor)
+library(gtools)
+library(ggridges)
+library(ggfortify)
+library(tableone)
+library(pollster)
+library(naniar)
+library(survey)
+library(survival)
+library(biostat3)
+library(Epi)
+library(lubridate)
+library(mice)
+library(mitools)
+library(mitml)
+library(Hmisc)
+library(finalfit)
+```
+
+## Data
+
+```{r load myData2}
+load("TobriskCov_Data_02102023.RData")
+```
+
+# Testing the need for splines
+
+We fitted a minimally adjusted model for sex and the age as a linear function or a penalized smoothing spline. We used a likelihood ratio test to compare whether using a spline provides a better fit.
+
+The results show a better fit when using penalised smoothing splines for all variables. We will thus model age using splines.
+
+```{r splines}
+# Age as a linear function
+agelinear <- with(des_final,
+                  svyglm(event_2doses ~ factor(sex) + age_cont, 
+                         family = quasipoisson()))
+# Age as a penalised smoothing spline
+agespline <- with(des_final,
+                  svyglm(event_2doses ~ factor(sex) + pspline(age_cont), 
+                         family = quasipoisson()))
+testModels(agespline, agelinear, method = "D2")
+```
+
+# Main analyses
+
+# Primary outcome - Uptake of two doses of COVID-19 vaccine
+
+## Smoking
+
+```{r MA_PO_Smoke}
+# Crude model
+m1_MA_PO_Smoke <- with(des_final, 
+                       svyglm(event_2doses ~ factor(smoking_status), 
+                              family = quasipoisson()))
+# summary(MIcombine(m1_MA_PO_Smoke))
+
+# Adjusted for age and sex
+m2_MA_PO_Smoke <- with(des_final, 
+                       svyglm(event_2doses ~ factor(smoking_status) + 
+                                factor(sex) + pspline(age_cont), 
+                              family = quasipoisson()))
+# summary(MIcombine(m2_MA_PO_Smoke))
+
+# Adjusted for confounders
+m3_MA_PO_Smoke <- with(des_final, 
+                       svyglm(event_2doses ~ factor(smoking_status) + 
+                                factor(sex) + pspline(age_cont) + 
+                                factor(educ_tertiles) + factor(maritalstatus_bin) + 
+                                factor(mother_tongue) + factor(involvement_attend_j) +
+                                factor(fs_shp_koodi), 
+                              family = quasipoisson()))
+# summary(MIcombine(m3_MA_PO_Smoke))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_PO_Smoke <- with(des_final, 
+                       svyglm(event_2doses ~ factor(smoking_status) + 
+                                factor(sex) + pspline(age_cont) + 
+                                factor(educ_tertiles) + factor(maritalstatus_bin) + 
+                                factor(mother_tongue) + factor(involvement_attend_j) + 
+                                factor(fs_shp_koodi) + factor(case_C1), 
+                              family = quasipoisson()))
+# summary(MIcombine(m4_MA_PO_Smoke))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_PO_Smoke)), 
+                             confint(MIcombine(m1_MA_PO_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude Model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_PO_Smoke)), 
+                             confint(MIcombine(m2_MA_PO_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_PO_Smoke)), 
+                             confint(MIcombine(m3_MA_PO_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_PO_Smoke)), 
+                             confint(MIcombine(m4_MA_PO_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Checking the estimates are on the same sample
+nrow(m1_MA_PO_Smoke[[1]]$data)
+nrow(m2_MA_PO_Smoke[[1]]$data)
+nrow(m3_MA_PO_Smoke[[1]]$data)
+nrow(m4_MA_PO_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_PO_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_MA_PO_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+# Remove unnecessary objects from work space
+rm(list = ls()[ls() %in% c("m1_MA_PO_Smoke", "m2_MA_PO_Smoke", "m3_MA_PO_Smoke", 
+                           "m4_MA_PO_Smoke")])
+```
+
+## Snus
+
+```{r MA_PO_Snus}
+# Crude model
+m1_MA_PO_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                      svyglm(event_2doses ~  factor(snus_status), 
+                             family = quasipoisson()))
+# summary(MIcombine(m1_MA_PO_Snus))
+
+# Adjusted for age and sex
+m2_MA_PO_Snus <- with(subset(des_final, between(age_cont, 20, 74)),
+                      svyglm(event_2doses ~ factor(snus_status) + factor(sex) + 
+                               pspline(age_cont), 
+                             family = quasipoisson()))
+# summary(MIcombine(m2_MA_PO_Snus))
+
+# Adjusted for confounders
+m3_MA_PO_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                      svyglm(event_2doses ~ factor(snus_status) + factor(sex) + 
+                               pspline(age_cont) + factor(educ_tertiles) + 
+                               factor(maritalstatus_bin) + factor(mother_tongue) +
+                               factor(involvement_attend_j) + factor(fs_shp_koodi), 
+                             family = quasipoisson()))
+# summary(MIcombine(m3_MA_PO_Snus))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_PO_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                      svyglm(event_2doses ~ factor(snus_status) + factor(sex) + 
+                               pspline(age_cont) + factor(educ_tertiles) +
+                               factor(maritalstatus_bin) + factor(mother_tongue) +
+                               factor(involvement_attend_j) + factor(fs_shp_koodi) +
+                               factor(case_C1), 
+                             family = quasipoisson()))
+# summary(MIcombine(m4_MA_PO_Snus))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_PO_Snus)), 
+                             confint(MIcombine(m1_MA_PO_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_PO_Snus)), 
+                             confint(MIcombine(m2_MA_PO_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_PO_Snus)), 
+                             confint(MIcombine(m3_MA_PO_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_PO_Snus)), 
+                             confint(MIcombine(m4_MA_PO_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Checking the estimates are on the same sample
+nrow(m1_MA_PO_Snus[[1]]$data)
+nrow(m2_MA_PO_Snus[[1]]$data)
+nrow(m3_MA_PO_Snus[[1]]$data)
+nrow(m4_MA_PO_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_PO_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_MA_PO_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+# Remove unnecessary objects from work space
+rm(list = ls()[ls() %in% c("m1_MA_PO_Snus", "m2_MA_PO_Snus", "m3_MA_PO_Snus", 
+                           "m4_MA_PO_Snus")])
+```
+
+## Tobacco use
+
+```{r MA_PO_Tobacco}
+# Crude model
+m1_MA_PO_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)),
+                         svyglm(event_2doses ~ factor(tobacco_use), 
+                                family = quasipoisson()))
+# summary(MIcombine(m1_MA_PO_Tobacco))
+
+# Adjusted for age and sex
+m2_MA_PO_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)),
+                         svyglm(event_2doses ~ factor(tobacco_use) + 
+                                  factor(sex) + pspline(age_cont), 
+                                family = quasipoisson()))
+# summary(MIcombine(m2_MA_PO_Tobacco))
+
+# Adjusted for confounders
+m3_MA_PO_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)),
+                         svyglm(event_2doses ~ factor(tobacco_use) + 
+                                  factor(sex) + pspline(age_cont) + 
+                                  factor(educ_tertiles) + factor(maritalstatus_bin) + 
+                                  factor(mother_tongue) + factor(involvement_attend_j) +
+                                  factor(fs_shp_koodi), 
+                                family = quasipoisson()))
+# summary(MIcombine(m3_MA_PO_Tobacco))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_PO_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)),
+                         svyglm(event_2doses ~ factor(tobacco_use) + 
+                                  factor(sex) + pspline(age_cont) + 
+                                  factor(educ_tertiles) + factor(maritalstatus_bin) + 
+                                  factor(mother_tongue) + factor(involvement_attend_j) + 
+                                  factor(fs_shp_koodi) + factor(case_C1), 
+                                family = quasipoisson()))
+# summary(MIcombine(m4_MA_PO_Tobacco))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_PO_Tobacco)), 
+                             confint(MIcombine(m1_MA_PO_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude Model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_PO_Tobacco)), 
+                             confint(MIcombine(m2_MA_PO_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_PO_Tobacco)), 
+                             confint(MIcombine(m3_MA_PO_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_PO_Tobacco)), 
+                             confint(MIcombine(m4_MA_PO_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Checking the estimates are on the same sample
+nrow(m1_MA_PO_Tobacco[[1]]$data)
+nrow(m2_MA_PO_Tobacco[[1]]$data)
+nrow(m3_MA_PO_Tobacco[[1]]$data)
+nrow(m4_MA_PO_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_PO_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_MA_PO_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+# Remove unnecessary objects from work space
+rm(list = ls()[ls() %in% c("m1_MA_PO_Tobacco", "m2_MA_PO_Tobacco", "m3_MA_PO_Tobacco", 
+                           "m4_MA_PO_Tobacco")])
+```
+
+
+# Secondary outcomes
+
+## 1. Uptake of one dose of COVID-19 vaccine
+
+### 1.1 Smoking
+
+```{r MA_SO1_Smoke}
+## Crude model
+m1_MA_SO1_Smoke <- with(des_final, 
+                        svyglm(event_1dose ~ factor(smoking_status), 
+                               family = quasipoisson()))
+# summary(MIcombine(m1_MA_SO1_Smoke))
+
+# Adjusted for age and sex
+m2_MA_SO1_Smoke <- with(des_final, 
+                        svyglm(event_1dose ~ factor(smoking_status) + factor(sex) + 
+                                 pspline(age_cont), 
+                               family = quasipoisson()))
+# summary(MIcombine(m2_MA_SO1_Smoke))
+
+# Adjusted for confounders
+m3_MA_SO1_Smoke <- with(des_final, 
+                        svyglm(event_1dose ~ factor(smoking_status) + factor(sex) + 
+                                 pspline(age_cont) + factor(educ_tertiles) + 
+                                 factor(maritalstatus_bin) + factor(mother_tongue) + 
+                                 factor(involvement_attend_j) + factor(fs_shp_koodi), 
+                               family = quasipoisson()))
+# summary(MIcombine(m3_MA_SO1_Smoke))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_SO1_Smoke <- with(des_final, 
+                        svyglm(event_1dose ~ factor(smoking_status) + factor(sex) + 
+                                 pspline(age_cont) + factor(educ_tertiles) + 
+                                 factor(maritalstatus_bin) + factor(mother_tongue) + 
+                                 factor(involvement_attend_j) + factor(fs_shp_koodi) + 
+                                 factor(case_C1), 
+                               family = quasipoisson()))
+# summary(MIcombine(m4_MA_SO1_Smoke))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_SO1_Smoke)), 
+                             confint(MIcombine(m1_MA_SO1_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_SO1_Smoke)), 
+                             confint(MIcombine(m2_MA_SO1_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_SO1_Smoke)), 
+                             confint(MIcombine(m3_MA_SO1_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_SO1_Smoke)), 
+                             confint(MIcombine(m4_MA_SO1_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Checking the estimates are on the same sample
+nrow(m1_MA_SO1_Smoke[[1]]$data)
+nrow(m2_MA_SO1_Smoke[[1]]$data)
+nrow(m3_MA_SO1_Smoke[[1]]$data)
+nrow(m4_MA_SO1_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_SO1_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_MA_SO1_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_MA_SO1_Smoke", "m2_MA_SO1_Smoke", "m3_MA_SO1_Smoke", 
+                           "m4_MA_SO1_Smoke")])
+```
+
+### 1.2 Snus
+
+```{r MA_SO1_Snus}
+# Crude model
+m1_MA_SO1_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_1dose ~ factor(snus_status), 
+                              family = quasipoisson()))
+# summary(MIcombine(m1_MA_SO1_Snus))
+
+# Adjusted for age and sex
+m2_MA_SO1_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_1dose ~ factor(snus_status) + factor(sex) + 
+                                pspline(age_cont), 
+                              family = quasipoisson()))
+# summary(MIcombine(m2_MA_SO1_Snus))
+
+# Adjusted for confounders
+m3_MA_SO1_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_1dose ~ factor(snus_status) + factor(sex) +
+                                pspline(age_cont) + factor(educ_tertiles) +
+                                factor(maritalstatus_bin) + factor(mother_tongue) +
+                                factor(involvement_attend_j) + factor(fs_shp_koodi), 
+                              family = quasipoisson()))
+# summary(MIcombine(m3_MA_SO1_Snus))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_SO1_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_1dose ~ factor(snus_status) + factor(sex) + 
+                                pspline(age_cont) + factor(educ_tertiles) + 
+                                factor(maritalstatus_bin) + factor(mother_tongue) +
+                                factor(involvement_attend_j) + factor(fs_shp_koodi) + 
+                                factor(case_C1), 
+                              family = quasipoisson()))
+# summary(MIcombine(m4_MA_SO1_Snus))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_SO1_Snus)), 
+                             confint(MIcombine(m1_MA_SO1_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>% 
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_SO1_Snus)), 
+                             confint(MIcombine(m2_MA_SO1_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_SO1_Snus)), 
+                             confint(MIcombine(m3_MA_SO1_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_SO1_Snus)), 
+                             confint(MIcombine(m4_MA_SO1_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>% 
+  kable_classic(full_width = F, position = "left")
+
+# Checking the estimates are on the same sample
+nrow(m1_MA_SO1_Snus[[1]]$data)
+nrow(m2_MA_SO1_Snus[[1]]$data)
+nrow(m3_MA_SO1_Snus[[1]]$data)
+nrow(m4_MA_SO1_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_SO1_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_MA_SO1_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_MA_SO1_Snus", "m2_MA_SO1_Snus", "m3_MA_SO1_Snus", 
+                           "m4_MA_SO1_Snus")])
+```
+
+### 1.3 Tobacco use
+
+```{r MA_SO1_Tobacco}
+# Crude model
+m1_MA_SO1_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_1dose ~ factor(tobacco_use), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m1_MA_SO1_Tobacco))
+
+# Adjusted for age and sex
+m2_MA_SO1_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_1dose ~ factor(tobacco_use) + factor(sex) + 
+                                   pspline(age_cont), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m2_MA_SO1_Tobacco))
+
+# Adjusted for confounders
+m3_MA_SO1_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_1dose ~ factor(tobacco_use) + factor(sex) +
+                                   pspline(age_cont) + factor(educ_tertiles) +
+                                   factor(maritalstatus_bin) + factor(mother_tongue) +
+                                   factor(involvement_attend_j) + factor(fs_shp_koodi), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m3_MA_SO1_Tobacco))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_SO1_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_1dose ~ factor(tobacco_use) + factor(sex) + 
+                                   pspline(age_cont) + factor(educ_tertiles) + 
+                                   factor(maritalstatus_bin) + factor(mother_tongue) +
+                                   factor(involvement_attend_j) + factor(fs_shp_koodi) + 
+                                   factor(case_C1), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m4_MA_SO1_Tobacco))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_SO1_Tobacco)), 
+                             confint(MIcombine(m1_MA_SO1_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>% 
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_SO1_Tobacco)), 
+                             confint(MIcombine(m2_MA_SO1_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_SO1_Tobacco)), 
+                             confint(MIcombine(m3_MA_SO1_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_SO1_Tobacco)), 
+                             confint(MIcombine(m4_MA_SO1_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>% 
+  kable_classic(full_width = F, position = "left")
+
+# Checking the estimates are on the same sample
+nrow(m1_MA_SO1_Tobacco[[1]]$data)
+nrow(m2_MA_SO1_Tobacco[[1]]$data)
+nrow(m3_MA_SO1_Tobacco[[1]]$data)
+nrow(m4_MA_SO1_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_SO1_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_MA_SO1_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_MA_SO1_Tobacco", "m2_MA_SO1_Tobacco", "m3_MA_SO1_Tobacco", 
+                           "m4_MA_SO1_Tobacco")])
+```
+
+## 2. Uptake of three doses of COVID-19 vaccine
+
+### 2.1 Smoking
+
+```{r MA_SO2_Smoke}
+# Crude model
+m1_MA_SO2_Smoke <- with(des_final, 
+                        svyglm(event_3doses ~ factor(smoking_status), 
+                               family = quasipoisson()))
+# summary(MIcombine(m1_MA_SO2_Smoke))
+
+# Adjusted for age and sex
+m2_MA_SO2_Smoke <- with(des_final, 
+                        svyglm(event_3doses ~ factor(smoking_status) + factor(sex) + 
+                                 pspline(age_cont), 
+                               family = quasipoisson()))
+# summary(MIcombine(m2_MA_SO2_Smoke))
+
+# Adjusted for confounders
+m3_MA_SO2_Smoke <- with(des_final, 
+                        svyglm(event_3doses ~ factor(smoking_status) + factor(sex) + 
+                                 pspline(age_cont) + factor(educ_tertiles) + 
+                                 factor(maritalstatus_bin) + factor(mother_tongue) + 
+                                 factor(involvement_attend_j) + factor(fs_shp_koodi), 
+                               family = quasipoisson()))
+# summary(MIcombine(m3_MA_SO2_Smoke))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_SO2_Smoke <- with(des_final, 
+                        svyglm(event_3doses ~ factor(smoking_status) + factor(sex) +
+                                 pspline(age_cont) + factor(educ_tertiles) + 
+                                 factor(maritalstatus_bin) + factor(mother_tongue) + 
+                                 factor(involvement_attend_j) + factor(fs_shp_koodi) + 
+                                 factor(case_C1), 
+                               family = quasipoisson()))
+# summary(MIcombine(m4_MA_SO2_Smoke))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_SO2_Smoke)), 
+                             confint(MIcombine(m1_MA_SO2_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_SO2_Smoke)), 
+                             confint(MIcombine(m2_MA_SO2_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_SO2_Smoke)), 
+                             confint(MIcombine(m3_MA_SO2_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_SO2_Smoke)), 
+                             confint(MIcombine(m4_MA_SO2_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_MA_SO2_Smoke[[1]]$data)
+nrow(m2_MA_SO2_Smoke[[1]]$data)
+nrow(m3_MA_SO2_Smoke[[1]]$data)
+nrow(m4_MA_SO2_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_SO2_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_MA_SO2_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_MA_SO2_Smoke", "m2_MA_SO2_Smoke", "m3_MA_SO2_Smoke", 
+                           "m4_MA_SO2_Smoke")])
+```
+
+### 2.2 Snus
+
+```{r MA_SO2_Snus}
+# Crude model
+m1_MA_SO2_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_3doses ~ factor(snus_status), 
+                              family = quasipoisson()))
+# summary(MIcombine(m1_MA_SO2_Snus))
+
+## Adjusted for age and sex
+m2_MA_SO2_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_3doses ~ factor(snus_status) + factor(sex) + pspline(age_cont), 
+                              family = quasipoisson()))
+# summary(MIcombine(m2_MA_SO2_Snus))
+
+# Adjusted for confounders
+m3_MA_SO2_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_3doses ~ factor(snus_status) + factor(sex) +
+                                pspline(age_cont) + factor(educ_tertiles) +
+                                factor(maritalstatus_bin) + factor(mother_tongue) +
+                                factor(involvement_attend_j) + factor(fs_shp_koodi), 
+                              family = quasipoisson()))
+# summary(MIcombine(m3_MA_SO2_Snus))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_SO2_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_3doses ~ factor(snus_status) + factor(sex) + 
+                                pspline(age_cont) + factor(educ_tertiles) +
+                                factor(maritalstatus_bin) + factor(mother_tongue) +
+                                factor(involvement_attend_j) + 
+                                factor(fs_shp_koodi) + factor(case_C1), 
+                              family = quasipoisson()))
+# summary(MIcombine(m4_MA_SO2_Snus))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_SO2_Snus)), 
+                             confint(MIcombine(m1_MA_SO2_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>% 
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_SO2_Snus)), 
+                             confint(MIcombine(m2_MA_SO2_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_SO2_Snus)), 
+                             confint(MIcombine(m3_MA_SO2_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_SO2_Snus)), 
+                             confint(MIcombine(m4_MA_SO2_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>% 
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_MA_SO2_Snus[[1]]$data)
+nrow(m2_MA_SO2_Snus[[1]]$data)
+nrow(m3_MA_SO2_Snus[[1]]$data)
+nrow(m4_MA_SO2_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_SO2_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_MA_SO2_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_MA_SO2_Snus ","m2_MA_SO2_Snus", "m3_MA_SO2_Snus", 
+                           "m4_MA_SO2_Snus")])
+```
+
+### 2.3 Tobacco use
+
+```{r MA_SO2_Tobacco}
+# Crude model
+m1_MA_SO2_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_3doses ~ factor(tobacco_use), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m1_MA_SO2_Tobacco))
+
+# Adjusted for age and sex
+m2_MA_SO2_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_3doses ~ factor(tobacco_use) + factor(sex) + pspline(age_cont), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m2_MA_SO2_Tobacco))
+
+# Adjusted for confounders
+m3_MA_SO2_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_3doses ~ factor(tobacco_use) + factor(sex) +
+                                   pspline(age_cont) + factor(educ_tertiles) +
+                                   factor(maritalstatus_bin) + factor(mother_tongue) +
+                                   factor(involvement_attend_j) + factor(fs_shp_koodi), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m3_MA_SO2_Tobacco))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_SO2_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_3doses ~ factor(tobacco_use) + factor(sex) + 
+                                   pspline(age_cont) + factor(educ_tertiles) +
+                                   factor(maritalstatus_bin) + factor(mother_tongue) +
+                                   factor(involvement_attend_j) + 
+                                   factor(fs_shp_koodi) + factor(case_C1), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m4_MA_SO2_Tobacco))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_SO2_Tobacco)), 
+                             confint(MIcombine(m1_MA_SO2_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>% 
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_SO2_Tobacco)), 
+                             confint(MIcombine(m2_MA_SO2_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_SO2_Tobacco)), 
+                             confint(MIcombine(m3_MA_SO2_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_SO2_Tobacco)), 
+                             confint(MIcombine(m4_MA_SO2_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>% 
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_MA_SO2_Tobacco[[1]]$data)
+nrow(m2_MA_SO2_Tobacco[[1]]$data)
+nrow(m3_MA_SO2_Tobacco[[1]]$data)
+nrow(m4_MA_SO2_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_SO2_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_MA_SO2_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_MA_SO2_Tobacco ","m2_MA_SO2_Tobacco", "m3_MA_SO2_Tobacco", 
+                           "m4_MA_SO2_Tobacco")])
+```
+
+## 3. Interval spacing between 1st and 2nd dose of COVID-19 vaccine
+
+### 3.1 Smoking
+
+```{r MA_SO3_Smoke}
+# Get the average days 1st - 2nd
+interval1n2 <- dose2 %>% 
+  group_by(GUMM85ID) %>% 
+  subset(dose_nro == 2) %>% 
+  ungroup() %>% 
+  reframe(mean = mean(diff_days))
+paste("Average interval spacing between 1st and 2nd dose of COVID-19 vaccine:", round(interval1n2, 2), "days")
+
+# Crude model
+m1_MA_SO3_Smoke <- with(des_final, 
+                        svyglm(event_20weeks12 ~ factor(smoking_status), 
+                               family = quasipoisson()))
+# summary(MIcombine(m1_MA_SO3_Smoke))
+
+# Adjusted for age and sex
+m2_MA_SO3_Smoke <- with(des_final, 
+                        svyglm(event_20weeks12 ~ factor(smoking_status) + factor(sex) +
+                                 pspline(age_cont), 
+                               family = quasipoisson()))
+# summary(MIcombine(m2_MA_SO3_Smoke))
+
+# Adjusted for confounders
+m3_MA_SO3_Smoke <- with(des_final, 
+                        svyglm(event_20weeks12 ~ factor(smoking_status) + 
+                                 factor(sex) + pspline(age_cont) + factor(educ_tertiles) + 
+                                 factor(maritalstatus_bin) + factor(mother_tongue) +
+                                 factor(involvement_attend_j) + factor(fs_shp_koodi), 
+                               family = quasipoisson()))
+# summary(MIcombine(m3_MA_SO3_Smoke))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_SO3_Smoke <- with(des_final, 
+                        svyglm(event_20weeks12 ~ factor(smoking_status) +
+                                 factor(sex) + pspline(age_cont) + factor(educ_tertiles) + 
+                                 factor(maritalstatus_bin) + factor(mother_tongue) + factor(involvement_attend_j) + 
+                                 factor(fs_shp_koodi) + factor(case_C1), 
+                               family = quasipoisson()))
+# summary(MIcombine(m4_MA_SO3_Smoke))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_SO3_Smoke)), 
+                             confint(MIcombine(m1_MA_SO3_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_SO3_Smoke)), 
+                             confint(MIcombine(m2_MA_SO3_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_SO3_Smoke)), 
+                             confint(MIcombine(m3_MA_SO3_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_SO3_Smoke)), 
+                             confint(MIcombine(m4_MA_SO3_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_MA_SO3_Smoke[[1]]$data)
+nrow(m2_MA_SO3_Smoke[[1]]$data)
+nrow(m3_MA_SO3_Smoke[[1]]$data)
+nrow(m4_MA_SO3_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_SO3_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_MA_SO3_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_MA_SO3_Smoke ","m2_MA_SO3_Smoke", "m3_MA_SO3_Smoke", 
+                           "m4_MA_SO3_Smoke")])
+```
+
+### 3.2 Snus
+
+```{r MA_SO3_Snus}
+# Crude model
+m1_MA_SO3_Snus <- with(subset(des_final, between(age_cont, 20, 74)),  
+                       svyglm(event_20weeks12 ~ factor(snus_status), 
+                              family = quasipoisson()))
+# summary(MIcombine(m1_MA_SO3_Snus))
+
+# Adjusted for age and sex
+m2_MA_SO3_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_20weeks12 ~ factor(snus_status) + factor(sex) + 
+                                pspline(age_cont), 
+                              family = quasipoisson()))
+# summary(MIcombine(m2_MA_SO3_Snus))
+
+# Adjusted for confounders
+m3_MA_SO3_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_20weeks12 ~ factor(snus_status) + factor(sex) + 
+                                pspline(age_cont) + factor(educ_tertiles) + 
+                                factor(maritalstatus_bin) + factor(mother_tongue) +
+                                factor(involvement_attend_j) + factor(fs_shp_koodi), 
+                              family = quasipoisson()))
+# summary(MIcombine(m3_MA_SO3_Snus))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_SO3_Snus <- with(subset(des_final, between(age_cont, 20, 74)),
+                       svyglm(event_20weeks12 ~ factor(snus_status) +
+                                factor(sex) + pspline(age_cont) + factor(educ_tertiles) + 
+                                factor(maritalstatus_bin) + factor(mother_tongue) + 
+                                factor(involvement_attend_j) + factor(fs_shp_koodi) + 
+                                factor(case_C1), 
+                              family = quasipoisson()))
+# summary(MIcombine(m4_MA_SO3_Snus))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_SO3_Snus)), 
+                             confint(MIcombine(m1_MA_SO3_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_SO3_Snus)), 
+                             confint(MIcombine(m2_MA_SO3_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_SO3_Snus)), 
+                             confint(MIcombine(m3_MA_SO3_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_SO3_Snus)), 
+                             confint(MIcombine(m4_MA_SO3_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_MA_SO3_Snus[[1]]$data)
+nrow(m2_MA_SO3_Snus[[1]]$data)
+nrow(m3_MA_SO3_Snus[[1]]$data)
+nrow(m4_MA_SO3_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_SO3_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_MA_SO3_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4" ) %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_MA_SO3_Snus ","m2_MA_SO3_Snus", "m3_MA_SO3_Snus", 
+                           "m4_MA_SO3_Snus")])
+```
+
+### 3.3 Tobacco use
+
+```{r MA_SO3_Tobacco}
+# Crude model
+m1_MA_SO3_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)),  
+                          svyglm(event_20weeks12 ~ factor(tobacco_use), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m1_MA_SO3_Tobacco))
+
+# Adjusted for age and sex
+m2_MA_SO3_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_20weeks12 ~ factor(tobacco_use) + factor(sex) + 
+                                   pspline(age_cont), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m2_MA_SO3_Tobacco))
+
+# Adjusted for confounders
+m3_MA_SO3_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_20weeks12 ~ factor(tobacco_use) + factor(sex) + 
+                                   pspline(age_cont) + factor(educ_tertiles) + 
+                                   factor(maritalstatus_bin) + factor(mother_tongue) +
+                                   factor(involvement_attend_j) + factor(fs_shp_koodi), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m3_MA_SO3_Tobacco))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_SO3_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)),
+                          svyglm(event_20weeks12 ~ factor(tobacco_use) +
+                                   factor(sex) + pspline(age_cont) + factor(educ_tertiles) + 
+                                   factor(maritalstatus_bin) + factor(mother_tongue) + 
+                                   factor(involvement_attend_j) + factor(fs_shp_koodi) + 
+                                   factor(case_C1), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m4_MA_SO3_Tobacco))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_SO3_Tobacco)), 
+                             confint(MIcombine(m1_MA_SO3_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_SO3_Tobacco)), 
+                             confint(MIcombine(m2_MA_SO3_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_SO3_Tobacco)), 
+                             confint(MIcombine(m3_MA_SO3_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_SO3_Tobacco)), 
+                             confint(MIcombine(m4_MA_SO3_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_MA_SO3_Tobacco[[1]]$data)
+nrow(m2_MA_SO3_Tobacco[[1]]$data)
+nrow(m3_MA_SO3_Tobacco[[1]]$data)
+nrow(m4_MA_SO3_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_SO3_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_MA_SO3_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4" ) %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_MA_SO3_Tobacco ","m2_MA_SO3_Tobacco", "m3_MA_SO3_Tobacco", 
+                           "m4_MA_SO3_Tobacco")])
+```
+
+## 4. Interval spacing between 2nd and 3rd dose of COVID-19 vaccine
+
+### 4.1 Smoking
+
+```{r MA_SO4_Smoke}
+interval2n3 <- dose2 %>% 
+  group_by(GUMM85ID) %>% 
+  subset(count >= 3) %>% 
+  reframe(int_days = difftime(nth(vaccine_date, 3), nth(vaccine_date, 2), units = "days"),
+          int_days = as.numeric(int_days)) %>% 
+  distinct() %>% 
+  ungroup() %>% 
+  reframe(mean_days = mean(int_days, na.rm = T))
+paste("Average interval spacing between 2nd and 3rd dose of COVID-19 vaccine:", 
+      round(interval2n3, 2), "days")
+
+# Crude model
+m1_MA_SO4_Smoke <- with(des_final, 
+                        svyglm(event_7months23 ~ factor(smoking_status), 
+                               family = quasipoisson()))
+# summary(MIcombine(m1_MA_SO4_Smoke))
+
+# Adjusted for age and sex
+m2_MA_SO4_Smoke <- with(des_final, 
+                        svyglm(event_7months23 ~ factor(smoking_status) + factor(sex) +
+                                 pspline(age_cont), 
+                               family = quasipoisson()))
+# summary(MIcombine(m2_MA_SO4_Smoke))
+
+# Adjusted for confounders
+m3_MA_SO4_Smoke <- with(des_final, 
+                        svyglm(event_7months23 ~ factor(smoking_status) + 
+                                 factor(sex) + pspline(age_cont) + factor(educ_tertiles) + 
+                                 factor(maritalstatus_bin) + factor(mother_tongue) +
+                                 factor(involvement_attend_j) + factor(fs_shp_koodi), 
+                               family = quasipoisson()))
+# summary(MIcombine(m3_MA_SO4_Smoke))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_SO4_Smoke <- with(des_final, 
+                        svyglm(event_7months23 ~ factor(smoking_status) +
+                                 factor(sex) + pspline(age_cont) + factor(educ_tertiles) + 
+                                 factor(maritalstatus_bin) + factor(mother_tongue) + 
+                                 factor(involvement_attend_j) + factor(fs_shp_koodi) + 
+                                 factor(case_C1), 
+                               family = quasipoisson()))
+# summary(MIcombine(m4_MA_SO4_Smoke))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_SO4_Smoke)), 
+                             confint(MIcombine(m1_MA_SO4_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_SO4_Smoke)), 
+                             confint(MIcombine(m2_MA_SO4_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_SO4_Smoke)), 
+                             confint(MIcombine(m3_MA_SO4_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_SO4_Smoke)), 
+                             confint(MIcombine(m4_MA_SO4_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_MA_SO4_Smoke[[1]]$data)
+nrow(m2_MA_SO4_Smoke[[1]]$data)
+nrow(m3_MA_SO4_Smoke[[1]]$data)
+nrow(m4_MA_SO4_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_SO4_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_MA_SO4_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4" ) %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_MA_SO4_Smoke ","m2_MA_SO4_Smoke", "m3_MA_SO4_Smoke", 
+                           "m4_MA_SO4_Smoke")])
+```
+
+### 4.2 Snus
+
+```{r MA_SO4_Snus}
+# Crude model
+m1_MA_SO4_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_7months23 ~ factor(snus_status), 
+                              family = quasipoisson()))
+# summary(MIcombine(m1_MA_SO4_Snus))
+
+# Adjusted for age and sex
+m2_MA_SO4_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_7months23 ~ factor(snus_status) + factor(sex) +
+                                pspline(age_cont), 
+                              family = quasipoisson()))
+# summary(MIcombine(m2_MA_SO4_Snus))
+
+# Adjusted for confounders
+m3_MA_SO4_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_7months23 ~ factor(snus_status) + factor(sex) + 
+                                pspline(age_cont) + factor(educ_tertiles) +
+                                factor(maritalstatus_bin) + factor(mother_tongue) +
+                                factor(involvement_attend_j) + factor(fs_shp_koodi), 
+                              family = quasipoisson()))
+# summary(MIcombine(m3_MA_SO4_Snus))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_SO4_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                       svyglm(event_7months23 ~ factor(snus_status) +
+                                factor(sex) + pspline(age_cont) + factor(educ_tertiles) + 
+                                factor(maritalstatus_bin) + factor(mother_tongue) + 
+                                factor(involvement_attend_j) + factor(fs_shp_koodi) +
+                                factor(case_C1), 
+                              family = quasipoisson()))
+# summary(MIcombine(m4_MA_SO4_Snus))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_SO4_Snus)), 
+                             confint(MIcombine(m1_MA_SO4_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_SO4_Snus)), 
+                             confint(MIcombine(m2_MA_SO4_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_SO4_Snus)), 
+                             confint(MIcombine(m3_MA_SO4_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_SO4_Snus)), 
+                             confint(MIcombine(m4_MA_SO4_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_MA_SO4_Snus[[1]]$data)
+nrow(m2_MA_SO4_Snus[[1]]$data)
+nrow(m3_MA_SO4_Snus[[1]]$data)
+nrow(m4_MA_SO4_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_SO4_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_MA_SO4_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4" ) %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_MA_SO4_Snus ","m2_MA_SO4_Snus", "m3_MA_SO4_Snus", 
+                           "m4_MA_SO4_Snus")])
+```
+
+### 4.3 Tobacco use
+
+```{r MA_SO4_Tobacco}
+# Crude model
+m1_MA_SO4_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_7months23 ~ factor(tobacco_use), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m1_MA_SO4_Tobacco))
+
+# Adjusted for age and sex
+m2_MA_SO4_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_7months23 ~ factor(tobacco_use) + factor(sex) +
+                                   pspline(age_cont), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m2_MA_SO4_Tobacco))
+
+# Adjusted for confounders
+m3_MA_SO4_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_7months23 ~ factor(tobacco_use) + factor(sex) + 
+                                   pspline(age_cont) + factor(educ_tertiles) +
+                                   factor(maritalstatus_bin) + factor(mother_tongue) +
+                                   factor(involvement_attend_j) + factor(fs_shp_koodi), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m3_MA_SO4_Tobacco))
+
+# Adjusted for COVID-19 cases
+# Adjusted for C1
+m4_MA_SO4_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                          svyglm(event_7months23 ~ factor(tobacco_use) +
+                                   factor(sex) + pspline(age_cont) + factor(educ_tertiles) + 
+                                   factor(maritalstatus_bin) + factor(mother_tongue) + 
+                                   factor(involvement_attend_j) + factor(fs_shp_koodi) +
+                                   factor(case_C1), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m4_MA_SO4_Tobacco))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_MA_SO4_Tobacco)), 
+                             confint(MIcombine(m1_MA_SO4_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_MA_SO4_Tobacco)), 
+                             confint(MIcombine(m2_MA_SO4_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_MA_SO4_Tobacco)), 
+                             confint(MIcombine(m3_MA_SO4_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_MA_SO4_Tobacco)), 
+                             confint(MIcombine(m4_MA_SO4_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_MA_SO4_Tobacco[[1]]$data)
+nrow(m2_MA_SO4_Tobacco[[1]]$data)
+nrow(m3_MA_SO4_Tobacco[[1]]$data)
+nrow(m4_MA_SO4_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_MA_SO4_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_MA_SO4_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4" ) %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_MA_SO4_Tobacco ","m2_MA_SO4_Tobacco", "m3_MA_SO4_Tobacco", 
+                           "m4_MA_SO4_Tobacco")])
+```
+
+## 5. Simulation 1: All participants who got COVID at C1 get vaccinated
+
+### 5.1 Smoking
+
+```{r SIM1_Smoke}
+##### One dose #####
+print("##### One dose #####")
+# Crude model
+m1_SIM1_1dose_Smoke <- with(des_final, 
+                            svyglm(event_sim1_1dose ~ factor(smoking_status), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_1dose_Smoke))
+
+# Adjusted for age and sex
+m2_SIM1_1dose_Smoke <- with(des_final, 
+                            svyglm(event_sim1_1dose ~ factor(smoking_status) + 
+                                     factor(sex) + pspline(age_cont), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_1dose_Smoke))
+
+# Adjusted for confounders
+m3_SIM1_1dose_Smoke <- with(des_final, 
+                            svyglm(event_sim1_1dose ~ factor(smoking_status) + 
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) + 
+                                     factor(mother_tongue) +
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_1dose_Smoke))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM1_1dose_Smoke <- with(des_final, 
+                            svyglm(event_sim1_1dose ~ factor(smoking_status) +
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) + 
+                                     factor(mother_tongue) + 
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi) + factor(case_C1), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_1dose_Smoke))
+
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_1dose_Smoke)), 
+                             confint(MIcombine(m1_SIM1_1dose_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_1dose_Smoke)), 
+                             confint(MIcombine(m2_SIM1_1dose_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_1dose_Smoke)), 
+                             confint(MIcombine(m3_SIM1_1dose_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_1dose_Smoke)), 
+                             confint(MIcombine(m4_SIM1_1dose_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_1dose_Smoke[[1]]$data)
+nrow(m2_SIM1_1dose_Smoke[[1]]$data)
+nrow(m3_SIM1_1dose_Smoke[[1]]$data)
+nrow(m4_SIM1_1dose_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_1dose_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_1dose_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_1dose_Smoke", "m2_SIM1_1dose_Smoke", "m3_SIM1_1dose_Smoke", 
+                           "m4_SIM1_1dose_Smoke")])
+
+
+##### Two doses #####
+print("##### Two doses #####")
+# Crude model
+m1_SIM1_2doses_Smoke <- with(des_final, 
+                             svyglm(event_sim1_2doses ~ factor(smoking_status), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_2doses_Smoke))
+
+# Adjusted for age and sex
+m2_SIM1_2doses_Smoke <- with(des_final, 
+                             svyglm(event_sim1_2doses ~ factor(smoking_status) +
+                                      factor(sex) + pspline(age_cont), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_2doses_Smoke))
+
+# Adjusted for confounders
+m3_SIM1_2doses_Smoke <- with(des_final, 
+                             svyglm(event_sim1_2doses ~ factor(smoking_status) + 
+                                      factor(sex) + pspline(age_cont) + 
+                                      factor(educ_tertiles) + 
+                                      factor(maritalstatus_bin) +
+                                      factor(mother_tongue) +
+                                      factor(involvement_attend_j) + 
+                                      factor(fs_shp_koodi), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_2doses_Smoke))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM1_2doses_Smoke <- with(des_final, 
+                             svyglm(event_sim1_2doses ~ factor(smoking_status) +
+                                      factor(sex) + pspline(age_cont) + 
+                                      factor(educ_tertiles) + 
+                                      factor(maritalstatus_bin) +
+                                      factor(mother_tongue) + 
+                                      factor(involvement_attend_j) + 
+                                      factor(fs_shp_koodi) + factor(case_C1), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_2doses_Smoke))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_2doses_Smoke)), 
+                             confint(MIcombine(m1_SIM1_2doses_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_2doses_Smoke)), 
+                             confint(MIcombine(m2_SIM1_2doses_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_2doses_Smoke)), 
+                             confint(MIcombine(m3_SIM1_2doses_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_2doses_Smoke)), 
+                             confint(MIcombine(m4_SIM1_2doses_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_2doses_Smoke[[1]]$data)
+nrow(m2_SIM1_2doses_Smoke[[1]]$data)
+nrow(m3_SIM1_2doses_Smoke[[1]]$data)
+nrow(m4_SIM1_2doses_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_2doses_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_2doses_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_2doses_Smoke", "m2_SIM1_2doses_Smoke", "m3_SIM1_2doses_Smoke", 
+                           "m4_SIM1_2doses_Smoke")])
+
+
+##### Three doses #####
+print("##### Three doses #####")
+# Crude model
+m1_SIM1_3doses_Smoke <- with(des_final, 
+                             svyglm(event_sim1_3doses ~ factor(smoking_status), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_3doses_Smoke))
+
+# Adjusted for age and sex
+m2_SIM1_3doses_Smoke <- with(des_final, 
+                             svyglm(event_sim1_3doses ~ factor(smoking_status) +
+                                      factor(sex) + pspline(age_cont), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_3doses_Smoke))
+
+# Adjusted for confounders
+m3_SIM1_3doses_Smoke <- with(des_final, 
+                             svyglm(event_sim1_3doses ~ factor(smoking_status) + 
+                                      factor(sex) + pspline(age_cont) + 
+                                      factor(educ_tertiles) + 
+                                      factor(maritalstatus_bin) +
+                                      factor(mother_tongue) +
+                                      factor(involvement_attend_j) + 
+                                      factor(fs_shp_koodi), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_3doses_Smoke))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM1_3doses_Smoke <- with(des_final, 
+                             svyglm(event_sim1_3doses ~ factor(smoking_status) +
+                                      factor(sex) + pspline(age_cont) + 
+                                      factor(educ_tertiles) + 
+                                      factor(maritalstatus_bin) +
+                                      factor(mother_tongue) + 
+                                      factor(involvement_attend_j) + 
+                                      factor(fs_shp_koodi) + factor(case_C1), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_3doses_Smoke))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_3doses_Smoke)), 
+                             confint(MIcombine(m1_SIM1_3doses_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_3doses_Smoke)), 
+                             confint(MIcombine(m2_SIM1_3doses_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_3doses_Smoke)), 
+                             confint(MIcombine(m3_SIM1_3doses_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_3doses_Smoke)), 
+                             confint(MIcombine(m4_SIM1_3doses_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_3doses_Smoke[[1]]$data)
+nrow(m2_SIM1_3doses_Smoke[[1]]$data)
+nrow(m3_SIM1_3doses_Smoke[[1]]$data)
+nrow(m4_SIM1_3doses_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_3doses_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_3doses_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_3doses_Smoke", "m2_SIM1_3doses_Smoke", "m3_SIM1_3doses_Smoke", 
+                           "m4_SIM1_3doses_Smoke")])
+
+
+##### Spacing between 1st and 2nd dose #####
+print("##### Spacing between 1st and 2nd dose #####")
+# Crude model
+m1_SIM1_I12_Smoke <- with(des_final, 
+                          svyglm(event_sim1_20weeks12 ~ factor(smoking_status), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_I12_Smoke))
+
+# Adjusted for age and sex
+m2_SIM1_I12_Smoke <- with(des_final, 
+                          svyglm(event_sim1_20weeks12 ~ factor(smoking_status) +
+                                   factor(sex) + pspline(age_cont), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_I12_Smoke))
+
+# Adjusted for confounders
+m3_SIM1_I12_Smoke <- with(des_final, 
+                          svyglm(event_sim1_20weeks12 ~ factor(smoking_status) + 
+                                   factor(sex) + pspline(age_cont) + 
+                                   factor(educ_tertiles) + 
+                                   factor(maritalstatus_bin) +
+                                   factor(mother_tongue) +
+                                   factor(involvement_attend_j) + 
+                                   factor(fs_shp_koodi), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_I12_Smoke))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM1_I12_Smoke <- with(des_final, 
+                          svyglm(event_sim1_20weeks12 ~ factor(smoking_status) +
+                                   factor(sex) + pspline(age_cont) + 
+                                   factor(educ_tertiles) + 
+                                   factor(maritalstatus_bin) +
+                                   factor(mother_tongue) + 
+                                   factor(involvement_attend_j) + 
+                                   factor(fs_shp_koodi) + factor(case_C1), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_I12_Smoke))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_I12_Smoke)), 
+                             confint(MIcombine(m1_SIM1_I12_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_I12_Smoke)), 
+                             confint(MIcombine(m2_SIM1_I12_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_I12_Smoke)), 
+                             confint(MIcombine(m3_SIM1_I12_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_I12_Smoke)), 
+                             confint(MIcombine(m4_SIM1_I12_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_I12_Smoke[[1]]$data)
+nrow(m2_SIM1_I12_Smoke[[1]]$data)
+nrow(m3_SIM1_I12_Smoke[[1]]$data)
+nrow(m4_SIM1_I12_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_I12_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_I12_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4" ) %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_I12_Smoke", "m2_SIM1_I12_Smoke", "m3_SIM1_I12_Smoke", 
+                           "m4_SIM1_I12_Smoke")])
+
+
+##### Spacing between 2nd and 3rd dose #####
+print("##### Spacing between 2nd and 3rd dose #####")
+# Crude model
+m1_SIM1_I23_Smoke <- with(des_final, 
+                          svyglm(event_sim1_7months23 ~ factor(smoking_status), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_I23_Smoke))
+
+# Adjusted for age and sex
+m2_SIM1_I23_Smoke <- with(des_final, 
+                          svyglm(event_sim1_7months23 ~ factor(smoking_status) +
+                                   factor(sex) + pspline(age_cont), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_I23_Smoke))
+
+# Adjusted for confounders
+m3_SIM1_I23_Smoke <- with(des_final, 
+                          svyglm(event_sim1_7months23 ~ factor(smoking_status) + 
+                                   factor(sex) + pspline(age_cont) + 
+                                   factor(educ_tertiles) + 
+                                   factor(maritalstatus_bin) +
+                                   factor(mother_tongue) +
+                                   factor(involvement_attend_j) + 
+                                   factor(fs_shp_koodi), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_I23_Smoke))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM1_I23_Smoke <- with(des_final, 
+                          svyglm(event_sim1_7months23 ~ factor(smoking_status) +
+                                   factor(sex) + pspline(age_cont) + 
+                                   factor(educ_tertiles) + 
+                                   factor(maritalstatus_bin) +
+                                   factor(mother_tongue) + 
+                                   factor(involvement_attend_j) + 
+                                   factor(fs_shp_koodi) + factor(case_C1),  
+                                 family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_I23_Smoke))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_I23_Smoke)), 
+                             confint(MIcombine(m1_SIM1_I23_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_I23_Smoke)), 
+                             confint(MIcombine(m2_SIM1_I23_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_I23_Smoke)), 
+                             confint(MIcombine(m3_SIM1_I23_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_I23_Smoke)), 
+                             confint(MIcombine(m4_SIM1_I23_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_I23_Smoke[[1]]$data)
+nrow(m2_SIM1_I23_Smoke[[1]]$data)
+nrow(m3_SIM1_I23_Smoke[[1]]$data)
+nrow(m4_SIM1_I23_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_I23_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_I23_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4" ) %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_I23_Smoke", "m2_SIM1_I23_Smoke", "m3_SIM1_I23_Smoke", 
+                           "m4_SIM1_I23_Smoke")])
+```
+
+### 5.2 Snus
+
+```{r SIM1_Snus}
+##### One dose #####
+print("##### One dose #####") 
+# Crude model
+m1_SIM1_1dose_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                           svyglm(event_sim1_1dose ~ factor(snus_status), 
+                                  family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_1dose_Snus))
+
+# Adjusted for age and sex
+m2_SIM1_1dose_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                           svyglm(event_sim1_1dose ~ factor(snus_status) + 
+                                    factor(sex) + pspline(age_cont), 
+                                  family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_1dose_Snus))
+
+# Adjusted for confounders
+m3_SIM1_1dose_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                           svyglm(event_sim1_1dose ~ factor(snus_status) + 
+                                    factor(sex) + pspline(age_cont) + 
+                                    factor(educ_tertiles) + 
+                                    factor(maritalstatus_bin) + 
+                                    factor(mother_tongue) +
+                                    factor(involvement_attend_j) + 
+                                    factor(fs_shp_koodi), 
+                                  family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_1dose_Snus))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM1_1dose_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                           svyglm(event_sim1_1dose ~ factor(snus_status) +
+                                    factor(sex) + pspline(age_cont) + 
+                                    factor(educ_tertiles) + 
+                                    factor(maritalstatus_bin) + 
+                                    factor(mother_tongue) + 
+                                    factor(involvement_attend_j) + 
+                                    factor(fs_shp_koodi) + factor(case_C1), 
+                                  family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_1dose_Snus))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_1dose_Snus)), 
+                             confint(MIcombine(m1_SIM1_1dose_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_1dose_Snus)), 
+                             confint(MIcombine(m2_SIM1_1dose_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_1dose_Snus)), 
+                             confint(MIcombine(m3_SIM1_1dose_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_1dose_Snus)), 
+                             confint(MIcombine(m4_SIM1_1dose_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_1dose_Snus[[1]]$data)
+nrow(m2_SIM1_1dose_Snus[[1]]$data)
+nrow(m3_SIM1_1dose_Snus[[1]]$data)
+nrow(m4_SIM1_1dose_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_1dose_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_1dose_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_1dose_Snus", "m2_SIM1_1dose_Snus", "m3_SIM1_1dose_Snus", 
+                           "m4_SIM1_1dose_Snus")])
+
+
+##### Two doses #####
+print("##### Two doses #####") 
+# Crude model
+m1_SIM1_2doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_2doses ~ factor(snus_status), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_2doses_Snus))
+
+# Adjusted for age and sex
+m2_SIM1_2doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_2doses ~ factor(snus_status) +
+                                     factor(sex) + pspline(age_cont), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_2doses_Snus))
+
+# Adjusted for confounders
+m3_SIM1_2doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_2doses ~ factor(snus_status) + 
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) +
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_2doses_Snus))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM1_2doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_2doses ~ factor(snus_status) +
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) + 
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi) + factor(case_C1), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_2doses_Snus))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_2doses_Snus)), 
+                             confint(MIcombine(m1_SIM1_2doses_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_2doses_Snus)), 
+                             confint(MIcombine(m2_SIM1_2doses_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_2doses_Snus)), 
+                             confint(MIcombine(m3_SIM1_2doses_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_2doses_Snus)), 
+                             confint(MIcombine(m4_SIM1_2doses_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_2doses_Snus[[1]]$data)
+nrow(m2_SIM1_2doses_Snus[[1]]$data)
+nrow(m3_SIM1_2doses_Snus[[1]]$data)
+nrow(m4_SIM1_2doses_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_2doses_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_2doses_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4" ) %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_2doses_Snus", "m2_SIM1_2doses_Snus", "m3_SIM1_2doses_Snus", 
+                           "m4_SIM1_2doses_Snus")])
+
+
+##### Three doses #####
+print("##### Three doses #####")
+# Crude model
+m1_SIM1_3doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_3doses ~ factor(snus_status), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_3doses_Snus))
+
+# Adjusted for age and sex
+m2_SIM1_3doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_3doses ~ factor(snus_status) +
+                                     factor(sex) + pspline(age_cont), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_3doses_Snus))
+
+# Adjusted for confounders
+m3_SIM1_3doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_3doses ~ factor(snus_status) + 
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) +
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_3doses_Snus))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM1_3doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_3doses ~ factor(snus_status) +
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) + 
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi) + factor(case_C1), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_3doses_Snus))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_3doses_Snus)), 
+                             confint(MIcombine(m1_SIM1_3doses_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_3doses_Snus)), 
+                             confint(MIcombine(m2_SIM1_3doses_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_3doses_Snus)), 
+                             confint(MIcombine(m3_SIM1_3doses_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_3doses_Snus)), 
+                             confint(MIcombine(m4_SIM1_3doses_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_3doses_Snus[[1]]$data)
+nrow(m2_SIM1_3doses_Snus[[1]]$data)
+nrow(m3_SIM1_3doses_Snus[[1]]$data)
+nrow(m4_SIM1_3doses_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_3doses_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_3doses_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_3doses_Snus", "m2_SIM1_3doses_Snus", "m3_SIM1_3doses_Snus", 
+                           "m4_SIM1_3doses_Snus")])
+
+
+##### Spacing between 1st and 2nd dose ####
+print("##### Spacing between 1st and 2nd dose #####")
+# Crude model
+m1_SIM1_I12_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim1_20weeks12 ~ factor(snus_status), 
+                                family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_I12_Snus))
+
+# Adjusted for age and sex
+m2_SIM1_I12_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim1_20weeks12 ~ factor(snus_status) +
+                                  factor(sex) + pspline(age_cont), 
+                                family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_I12_Snus))
+
+# Adjusted for confounders
+m3_SIM1_I12_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim1_20weeks12 ~ factor(snus_status) + 
+                                  factor(sex) + pspline(age_cont) + 
+                                  factor(educ_tertiles) + 
+                                  factor(maritalstatus_bin) +
+                                  factor(mother_tongue) +
+                                  factor(involvement_attend_j) + 
+                                  factor(fs_shp_koodi), 
+                                family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_I12_Snus))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1 (all)
+m4_SIM1_I12_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim1_20weeks12 ~ factor(snus_status) +
+                                  factor(sex) + pspline(age_cont) + 
+                                  factor(educ_tertiles) + 
+                                  factor(maritalstatus_bin) +
+                                  factor(mother_tongue) + 
+                                  factor(involvement_attend_j) + 
+                                  factor(fs_shp_koodi) + factor(case_C1), 
+                                family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_I12_Snus))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_I12_Snus)), 
+                             confint(MIcombine(m1_SIM1_I12_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_I12_Snus)), 
+                             confint(MIcombine(m2_SIM1_I12_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_I12_Snus)), 
+                             confint(MIcombine(m3_SIM1_I12_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_I12_Snus)), 
+                             confint(MIcombine(m4_SIM1_I12_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_I12_Snus[[1]]$data)
+nrow(m2_SIM1_I12_Snus[[1]]$data)
+nrow(m3_SIM1_I12_Snus[[1]]$data)
+nrow(m4_SIM1_I12_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_I12_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_I12_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_I12_Snus", "m2_SIM1_I12_Snus", "m3_SIM1_I12_Snus", 
+                           "m4_SIM1_I12_Snus")])
+
+
+##### Spacing between 2nd and 3rd dose ####
+print("##### Spacing between 2nd and 3rd dose #####")
+# Crude model
+m1_SIM1_I23_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim1_7months23 ~ factor(snus_status), 
+                                family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_I23_Snus))
+
+# Adjusted for age and sex
+m2_SIM1_I23_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim1_7months23 ~ factor(snus_status) +
+                                  factor(sex) + pspline(age_cont), 
+                                family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_I23_Snus))
+
+# Adjusted for confounders
+m3_SIM1_I23_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim1_7months23 ~ factor(snus_status) + 
+                                  factor(sex) + pspline(age_cont) + 
+                                  factor(educ_tertiles) + 
+                                  factor(maritalstatus_bin) +
+                                  factor(mother_tongue) +
+                                  factor(involvement_attend_j) + 
+                                  factor(fs_shp_koodi), 
+                                family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_I23_Snus))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM1_I23_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim1_7months23 ~ factor(snus_status) +
+                                  factor(sex) + pspline(age_cont) + 
+                                  factor(educ_tertiles) + 
+                                  factor(maritalstatus_bin) +
+                                  factor(mother_tongue) + 
+                                  factor(involvement_attend_j) + 
+                                  factor(fs_shp_koodi) + factor(case_C1), 
+                                family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_I23_Snus))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_I23_Snus)), 
+                             confint(MIcombine(m1_SIM1_I23_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_I23_Snus)), 
+                             confint(MIcombine(m2_SIM1_I23_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_I23_Snus)), 
+                             confint(MIcombine(m3_SIM1_I23_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_I23_Snus)), 
+                             confint(MIcombine(m4_SIM1_I23_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_I23_Snus[[1]]$data)
+nrow(m2_SIM1_I23_Snus[[1]]$data)
+nrow(m3_SIM1_I23_Snus[[1]]$data)
+nrow(m4_SIM1_I23_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_I23_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_I23_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_I23_Snus", "m2_SIM1_I23_Snus", "m3_SIM1_I23_Snus", 
+                           "m4_SIM1_I23_Snus")])
+```
+
+### 5.3 Tobacco
+
+```{r SIM1_Tobacco}
+##### One dose #####
+print("##### One dose #####") 
+# Crude model
+m1_SIM1_1dose_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                              svyglm(event_sim1_1dose ~ factor(tobacco_use), 
+                                     family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_1dose_Tobacco))
+
+# Adjusted for age and sex
+m2_SIM1_1dose_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                              svyglm(event_sim1_1dose ~ factor(tobacco_use) + 
+                                       factor(sex) + pspline(age_cont), 
+                                     family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_1dose_Tobacco))
+
+# Adjusted for confounders
+m3_SIM1_1dose_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                              svyglm(event_sim1_1dose ~ factor(tobacco_use) + 
+                                       factor(sex) + pspline(age_cont) + 
+                                       factor(educ_tertiles) + 
+                                       factor(maritalstatus_bin) + 
+                                       factor(mother_tongue) +
+                                       factor(involvement_attend_j) + 
+                                       factor(fs_shp_koodi), 
+                                     family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_1dose_Tobacco))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM1_1dose_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                              svyglm(event_sim1_1dose ~ factor(tobacco_use) +
+                                       factor(sex) + pspline(age_cont) + 
+                                       factor(educ_tertiles) + 
+                                       factor(maritalstatus_bin) + 
+                                       factor(mother_tongue) + 
+                                       factor(involvement_attend_j) + 
+                                       factor(fs_shp_koodi) + factor(case_C1), 
+                                     family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_1dose_Tobacco))
+
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_1dose_Tobacco)), 
+                             confint(MIcombine(m1_SIM1_1dose_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_1dose_Tobacco)), 
+                             confint(MIcombine(m2_SIM1_1dose_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_1dose_Tobacco)), 
+                             confint(MIcombine(m3_SIM1_1dose_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_1dose_Tobacco)), 
+                             confint(MIcombine(m4_SIM1_1dose_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_1dose_Tobacco[[1]]$data)
+nrow(m2_SIM1_1dose_Tobacco[[1]]$data)
+nrow(m3_SIM1_1dose_Tobacco[[1]]$data)
+nrow(m4_SIM1_1dose_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_1dose_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_1dose_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_1dose_Tobacco", "m2_SIM1_1dose_Tobacco", "m3_SIM1_1dose_Tobacco", 
+                           "m4_SIM1_1dose_Tobacco")])
+
+
+##### Two doses #####
+print("##### Two doses #####") 
+# Crude model
+m1_SIM1_2doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim1_2doses ~ factor(tobacco_use), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_2doses_Tobacco))
+
+# Adjusted for age and sex
+m2_SIM1_2doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim1_2doses ~ factor(tobacco_use) +
+                                        factor(sex) + pspline(age_cont), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_2doses_Tobacco))
+
+# Adjusted for confounders
+m3_SIM1_2doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim1_2doses ~ factor(tobacco_use) + 
+                                        factor(sex) + pspline(age_cont) + 
+                                        factor(educ_tertiles) + 
+                                        factor(maritalstatus_bin) +
+                                        factor(mother_tongue) +
+                                        factor(involvement_attend_j) + 
+                                        factor(fs_shp_koodi), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_2doses_Tobacco))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM1_2doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim1_2doses ~ factor(tobacco_use) +
+                                        factor(sex) + pspline(age_cont) + 
+                                        factor(educ_tertiles) + 
+                                        factor(maritalstatus_bin) +
+                                        factor(mother_tongue) + 
+                                        factor(involvement_attend_j) + 
+                                        factor(fs_shp_koodi) + factor(case_C1), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_2doses_Tobacco))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_2doses_Tobacco)), 
+                             confint(MIcombine(m1_SIM1_2doses_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_2doses_Tobacco)), 
+                             confint(MIcombine(m2_SIM1_2doses_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_2doses_Tobacco)), 
+                             confint(MIcombine(m3_SIM1_2doses_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_2doses_Tobacco)), 
+                             confint(MIcombine(m4_SIM1_2doses_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_2doses_Tobacco[[1]]$data)
+nrow(m2_SIM1_2doses_Tobacco[[1]]$data)
+nrow(m3_SIM1_2doses_Tobacco[[1]]$data)
+nrow(m4_SIM1_2doses_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_2doses_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_2doses_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4" ) %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_2doses_Tobacco", "m2_SIM1_2doses_Tobacco", "m3_SIM1_2doses_Tobacco", 
+                           "m4_SIM1_2doses_Tobacco")])
+
+
+##### Three doses #####
+print("##### Three doses #####")
+# Crude model
+m1_SIM1_3doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim1_3doses ~ factor(tobacco_use), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_3doses_Tobacco))
+
+# Adjusted for age and sex
+m2_SIM1_3doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim1_3doses ~ factor(tobacco_use) +
+                                        factor(sex) + pspline(age_cont), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_3doses_Tobacco))
+
+# Adjusted for confounders
+m3_SIM1_3doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim1_3doses ~ factor(tobacco_use) + 
+                                        factor(sex) + pspline(age_cont) + 
+                                        factor(educ_tertiles) + 
+                                        factor(maritalstatus_bin) +
+                                        factor(mother_tongue) +
+                                        factor(involvement_attend_j) + 
+                                        factor(fs_shp_koodi), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_3doses_Tobacco))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM1_3doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim1_3doses ~ factor(tobacco_use) +
+                                        factor(sex) + pspline(age_cont) + 
+                                        factor(educ_tertiles) + 
+                                        factor(maritalstatus_bin) +
+                                        factor(mother_tongue) + 
+                                        factor(involvement_attend_j) + 
+                                        factor(fs_shp_koodi) + factor(case_C1), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_3doses_Tobacco))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_3doses_Tobacco)), 
+                             confint(MIcombine(m1_SIM1_3doses_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_3doses_Tobacco)), 
+                             confint(MIcombine(m2_SIM1_3doses_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_3doses_Tobacco)), 
+                             confint(MIcombine(m3_SIM1_3doses_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_3doses_Tobacco)), 
+                             confint(MIcombine(m4_SIM1_3doses_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_3doses_Tobacco[[1]]$data)
+nrow(m2_SIM1_3doses_Tobacco[[1]]$data)
+nrow(m3_SIM1_3doses_Tobacco[[1]]$data)
+nrow(m4_SIM1_3doses_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_3doses_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_3doses_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_3doses_Tobacco", "m2_SIM1_3doses_Tobacco", "m3_SIM1_3doses_Tobacco", 
+                           "m4_SIM1_3doses_Tobacco")])
+
+
+##### Spacing between 1st and 2nd dose ####
+print("##### Spacing between 1st and 2nd dose #####")
+# Crude model
+m1_SIM1_I12_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_20weeks12 ~ factor(tobacco_use), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_I12_Tobacco))
+
+# Adjusted for age and sex
+m2_SIM1_I12_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_20weeks12 ~ factor(tobacco_use) +
+                                     factor(sex) + pspline(age_cont), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_I12_Tobacco))
+
+# Adjusted for confounders
+m3_SIM1_I12_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_20weeks12 ~ factor(tobacco_use) + 
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) +
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_I12_Tobacco))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1 (all)
+m4_SIM1_I12_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_20weeks12 ~ factor(tobacco_use) +
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) + 
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi) + factor(case_C1), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_I12_Tobacco))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_I12_Tobacco)), 
+                             confint(MIcombine(m1_SIM1_I12_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_I12_Tobacco)), 
+                             confint(MIcombine(m2_SIM1_I12_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_I12_Tobacco)), 
+                             confint(MIcombine(m3_SIM1_I12_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_I12_Tobacco)), 
+                             confint(MIcombine(m4_SIM1_I12_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_I12_Tobacco[[1]]$data)
+nrow(m2_SIM1_I12_Tobacco[[1]]$data)
+nrow(m3_SIM1_I12_Tobacco[[1]]$data)
+nrow(m4_SIM1_I12_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_I12_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_I12_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_I12_Tobacco", "m2_SIM1_I12_Tobacco", "m3_SIM1_I12_Tobacco", 
+                           "m4_SIM1_I12_Tobacco")])
+
+
+##### Spacing between 2nd and 3rd dose ####
+print("##### Spacing between 2nd and 3rd dose #####")
+# Crude model
+m1_SIM1_I23_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_7months23 ~ factor(tobacco_use), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m1_SIM1_I23_Tobacco))
+
+# Adjusted for age and sex
+m2_SIM1_I23_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_7months23 ~ factor(tobacco_use) +
+                                     factor(sex) + pspline(age_cont), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m2_SIM1_I23_Tobacco))
+
+# Adjusted for confounders
+m3_SIM1_I23_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_7months23 ~ factor(tobacco_use) + 
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) +
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m3_SIM1_I23_Tobacco))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM1_I23_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim1_7months23 ~ factor(tobacco_use) +
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) + 
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi) + factor(case_C1), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m4_SIM1_I23_Tobacco))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM1_I23_Tobacco)), 
+                             confint(MIcombine(m1_SIM1_I23_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM1_I23_Tobacco)), 
+                             confint(MIcombine(m2_SIM1_I23_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM1_I23_Tobacco)), 
+                             confint(MIcombine(m3_SIM1_I23_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM1_I23_Tobacco)), 
+                             confint(MIcombine(m4_SIM1_I23_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM1_I23_Tobacco[[1]]$data)
+nrow(m2_SIM1_I23_Tobacco[[1]]$data)
+nrow(m3_SIM1_I23_Tobacco[[1]]$data)
+nrow(m4_SIM1_I23_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM1_I23_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_SIM1_I23_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM1_I23_Tobacco", "m2_SIM1_I23_Tobacco", 
+                           "m3_SIM1_I23_Tobacco", "m4_SIM1_I23_Tobacco")])
+```
+
+
+## 6. Simulation 2: All participants who got COVID at C1 not get vaccinated
+
+### 6.1 Smoking
+
+```{r SIM2_Smoke}
+##### One dose #####
+print("##### One dose #####")
+# Crude model
+m1_SIM2_1dose_Smoke <- with(des_final, 
+                            svyglm(event_sim1_1dose ~ factor(smoking_status), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_1dose_Smoke))
+
+# Adjusted for age and sex
+m2_SIM2_1dose_Smoke <- with(des_final, 
+                            svyglm(event_sim2_1dose ~ factor(smoking_status) + 
+                                     factor(sex) + pspline(age_cont), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_1dose_Smoke))
+
+# Adjusted for confounders
+m3_SIM2_1dose_Smoke <- with(des_final, 
+                            svyglm(event_sim2_1dose ~ factor(smoking_status) + 
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) + 
+                                     factor(mother_tongue) +
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_1dose_Smoke))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM2_1dose_Smoke <- with(des_final, 
+                            svyglm(event_sim2_1dose ~ factor(smoking_status) +
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) + 
+                                     factor(mother_tongue) + 
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi) + factor(case_C1), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_1dose_Smoke))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_1dose_Smoke)), 
+                             confint(MIcombine(m1_SIM2_1dose_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_1dose_Smoke)), 
+                             confint(MIcombine(m2_SIM2_1dose_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_1dose_Smoke)), 
+                             confint(MIcombine(m3_SIM2_1dose_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_1dose_Smoke)), 
+                             confint(MIcombine(m4_SIM2_1dose_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_1dose_Smoke[[1]]$data)
+nrow(m2_SIM2_1dose_Smoke[[1]]$data)
+nrow(m3_SIM2_1dose_Smoke[[1]]$data)
+nrow(m4_SIM2_1dose_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_1dose_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_1dose_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_1dose_Smoke", "m2_SIM2_1dose_Smoke", "m3_SIM2_1dose_Smoke", 
+                           "m4_SIM2_1dose_Smoke")])
+
+
+##### Two doses #####
+print("##### Two doses #####")
+# Crude model
+m1_SIM2_2doses_Smoke <- with(des_final, 
+                             svyglm(event_sim2_2doses ~ factor(smoking_status), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_2doses_Smoke))
+
+# Adjusted for age and sex
+m2_SIM2_2doses_Smoke <- with(des_final, 
+                             svyglm(event_sim2_2doses ~ factor(smoking_status) +
+                                      factor(sex) + pspline(age_cont), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_2doses_Smoke))
+
+# Adjusted for confounders
+m3_SIM2_2doses_Smoke <- with(des_final, 
+                             svyglm(event_sim2_2doses ~ factor(smoking_status) + 
+                                      factor(sex) + pspline(age_cont) + 
+                                      factor(educ_tertiles) + 
+                                      factor(maritalstatus_bin) +
+                                      factor(mother_tongue) +
+                                      factor(involvement_attend_j) + 
+                                      factor(fs_shp_koodi), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_2doses_Smoke))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM2_2doses_Smoke <- with(des_final, 
+                             svyglm(event_sim2_2doses ~ factor(smoking_status) +
+                                      factor(sex) + pspline(age_cont) + 
+                                      factor(educ_tertiles) + 
+                                      factor(maritalstatus_bin) +
+                                      factor(mother_tongue) + 
+                                      factor(involvement_attend_j) + 
+                                      factor(fs_shp_koodi) + factor(case_C1), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_2doses_Smoke))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_2doses_Smoke)), 
+                             confint(MIcombine(m1_SIM2_2doses_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_2doses_Smoke)), 
+                             confint(MIcombine(m2_SIM2_2doses_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_2doses_Smoke)), 
+                             confint(MIcombine(m3_SIM2_2doses_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_2doses_Smoke)), 
+                             confint(MIcombine(m4_SIM2_2doses_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_2doses_Smoke[[1]]$data)
+nrow(m2_SIM2_2doses_Smoke[[1]]$data)
+nrow(m3_SIM2_2doses_Smoke[[1]]$data)
+nrow(m4_SIM2_2doses_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_2doses_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_2doses_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_2doses_Smoke", "m2_SIM2_2doses_Smoke", "m3_SIM2_2doses_Smoke", 
+                           "m4_SIM2_2doses_Smoke")])
+
+
+##### Three doses #####
+print("##### Three doses #####")
+# Crude model
+m1_SIM2_3doses_Smoke <- with(des_final, 
+                             svyglm(event_sim2_3doses ~ factor(smoking_status), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_3doses_Smoke))
+
+# Adjusted for age and sex
+m2_SIM2_3doses_Smoke <- with(des_final, 
+                             svyglm(event_sim2_3doses ~ factor(smoking_status) +
+                                      factor(sex) + pspline(age_cont), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_3doses_Smoke))
+
+# Adjusted for confounders
+m3_SIM2_3doses_Smoke <- with(des_final, 
+                             svyglm(event_sim2_3doses ~ factor(smoking_status) + 
+                                      factor(sex) + pspline(age_cont) + 
+                                      factor(educ_tertiles) + 
+                                      factor(maritalstatus_bin) +
+                                      factor(mother_tongue) +
+                                      factor(involvement_attend_j) + 
+                                      factor(fs_shp_koodi), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_3doses_Smoke))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM2_3doses_Smoke <- with(des_final, 
+                             svyglm(event_sim2_3doses ~ factor(smoking_status) +
+                                      factor(sex) + pspline(age_cont) + 
+                                      factor(educ_tertiles) + 
+                                      factor(maritalstatus_bin) +
+                                      factor(mother_tongue) + 
+                                      factor(involvement_attend_j) + 
+                                      factor(fs_shp_koodi) + factor(case_C1), 
+                                    family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_3doses_Smoke))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_3doses_Smoke)), 
+                             confint(MIcombine(m1_SIM2_3doses_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_3doses_Smoke)), 
+                             confint(MIcombine(m2_SIM2_3doses_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_3doses_Smoke)), 
+                             confint(MIcombine(m3_SIM2_3doses_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_3doses_Smoke)), 
+                             confint(MIcombine(m4_SIM2_3doses_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_3doses_Smoke[[1]]$data)
+nrow(m2_SIM2_3doses_Smoke[[1]]$data)
+nrow(m3_SIM2_3doses_Smoke[[1]]$data)
+nrow(m4_SIM2_3doses_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_3doses_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_3doses_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_3doses_Smoke", "m2_SIM2_3doses_Smoke", "m3_SIM2_3doses_Smoke", 
+                           "m4_SIM2_3doses_Smoke")])
+
+
+##### Spacing between 1st and 2nd dose #####
+print("##### Spacing between 1st and 2nd dose #####")
+# Crude model
+m1_SIM2_I12_Smoke <- with(des_final, 
+                          svyglm(event_sim2_20weeks12 ~ factor(smoking_status), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_I12_Smoke))
+
+# Adjusted for age and sex
+m2_SIM2_I12_Smoke <- with(des_final, 
+                          svyglm(event_sim2_20weeks12 ~ factor(smoking_status) +
+                                   factor(sex) + pspline(age_cont), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_I12_Smoke))
+
+# Adjusted for confounders
+m3_SIM2_I12_Smoke <- with(des_final, 
+                          svyglm(event_sim2_20weeks12 ~ factor(smoking_status) + 
+                                   factor(sex) + pspline(age_cont) + 
+                                   factor(educ_tertiles) + 
+                                   factor(maritalstatus_bin) +
+                                   factor(mother_tongue) +
+                                   factor(involvement_attend_j) + 
+                                   factor(fs_shp_koodi), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_I12_Smoke))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM2_I12_Smoke <- with(des_final, 
+                          svyglm(event_sim2_20weeks12 ~ factor(smoking_status) +
+                                   factor(sex) + pspline(age_cont) + 
+                                   factor(educ_tertiles) + 
+                                   factor(maritalstatus_bin) +
+                                   factor(mother_tongue) + 
+                                   factor(involvement_attend_j) + 
+                                   factor(fs_shp_koodi) + factor(case_C1), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_I12_Smoke))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_I12_Smoke)), 
+                             confint(MIcombine(m1_SIM2_I12_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_I12_Smoke)), 
+                             confint(MIcombine(m2_SIM2_I12_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_I12_Smoke)), 
+                             confint(MIcombine(m3_SIM2_I12_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_I12_Smoke)), 
+                             confint(MIcombine(m4_SIM2_I12_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_I12_Smoke[[1]]$data)
+nrow(m2_SIM2_I12_Smoke[[1]]$data)
+nrow(m3_SIM2_I12_Smoke[[1]]$data)
+nrow(m4_SIM2_I12_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_I12_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_I12_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_I12_Smoke", "m2_SIM2_I12_Smoke", "m3_SIM2_I12_Smoke", 
+                           "m4_SIM2_I12_Smoke")])
+
+
+##### Spacing between 2nd and 3rd dose #####
+print("##### Spacing between 2nd and 3rd #####")
+# Crude model
+m1_SIM2_I23_Smoke <- with(des_final, 
+                          svyglm(event_sim2_7months23 ~ factor(smoking_status), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_I23_Smoke))
+
+# Adjusted for age and sex
+m2_SIM2_I23_Smoke <- with(des_final, 
+                          svyglm(event_sim2_7months23 ~ factor(smoking_status) +
+                                   factor(sex) + pspline(age_cont), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_I23_Smoke))
+
+# Adjusted for confounders
+m3_SIM2_I23_Smoke <- with(des_final, 
+                          svyglm(event_sim2_7months23 ~ factor(smoking_status) + 
+                                   factor(sex) + pspline(age_cont) + 
+                                   factor(educ_tertiles) + 
+                                   factor(maritalstatus_bin) +
+                                   factor(mother_tongue) +
+                                   factor(involvement_attend_j) + 
+                                   factor(fs_shp_koodi), 
+                                 family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_I23_Smoke))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM2_I23_Smoke <- with(des_final, 
+                          svyglm(event_sim2_7months23 ~ factor(smoking_status) +
+                                   factor(sex) + pspline(age_cont) + 
+                                   factor(educ_tertiles) + 
+                                   factor(maritalstatus_bin) +
+                                   factor(mother_tongue) + 
+                                   factor(involvement_attend_j) + 
+                                   factor(fs_shp_koodi) + factor(case_C1),  
+                                 family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_I23_Smoke))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_I23_Smoke)), 
+                             confint(MIcombine(m1_SIM2_I23_Smoke)))), 2)[2:4,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_I23_Smoke)), 
+                             confint(MIcombine(m2_SIM2_I23_Smoke)))), 2)[2:4,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_I23_Smoke)), 
+                             confint(MIcombine(m3_SIM2_I23_Smoke)))), 2)[2:4,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_I23_Smoke)), 
+                             confint(MIcombine(m4_SIM2_I23_Smoke)))), 2)[2:4,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_I23_Smoke[[1]]$data)
+nrow(m2_SIM2_I23_Smoke[[1]]$data)
+nrow(m3_SIM2_I23_Smoke[[1]]$data)
+nrow(m4_SIM2_I23_Smoke[[1]]$data)
+# n = 42935
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_I23_Smoke))[2:4], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_I23_Smoke))[2:4], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4" ) %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_I23_Smoke", "m2_SIM2_I23_Smoke", "m3_SIM2_I23_Smoke", 
+                           "m4_SIM2_I23_Smoke")])
+```
+
+### 6.2 Snus
+
+```{r SIM2_Snus}
+##### One dose #####
+print("##### One dose #####")
+# Crude model
+m1_SIM2_1dose_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                           svyglm(event_sim2_1dose ~ factor(snus_status), 
+                                  family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_1dose_Snus))
+
+# Adjusted for age and sex
+m2_SIM2_1dose_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                           svyglm(event_sim2_1dose ~ factor(snus_status) + 
+                                    factor(sex) + pspline(age_cont), 
+                                  family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_1dose_Snus))
+
+# Adjusted for confounders
+m3_SIM2_1dose_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                           svyglm(event_sim2_1dose ~ factor(snus_status) + 
+                                    factor(sex) + pspline(age_cont) + 
+                                    factor(educ_tertiles) + 
+                                    factor(maritalstatus_bin) + 
+                                    factor(mother_tongue) +
+                                    factor(involvement_attend_j) + 
+                                    factor(fs_shp_koodi), 
+                                  family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_1dose_Snus))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM2_1dose_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                           svyglm(event_sim2_1dose ~ factor(snus_status) +
+                                    factor(sex) + pspline(age_cont) + 
+                                    factor(educ_tertiles) + 
+                                    factor(maritalstatus_bin) + 
+                                    factor(mother_tongue) + 
+                                    factor(involvement_attend_j) + 
+                                    factor(fs_shp_koodi) + factor(case_C1), 
+                                  family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_1dose_Snus))
+
+# Obtain main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_1dose_Snus)), 
+                             confint(MIcombine(m1_SIM2_1dose_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_1dose_Snus)), 
+                             confint(MIcombine(m2_SIM2_1dose_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_1dose_Snus)), 
+                             confint(MIcombine(m3_SIM2_1dose_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_1dose_Snus)), 
+                             confint(MIcombine(m4_SIM2_1dose_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_1dose_Snus[[1]]$data)
+nrow(m2_SIM2_1dose_Snus[[1]]$data)
+nrow(m3_SIM2_1dose_Snus[[1]]$data)
+nrow(m4_SIM2_1dose_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_1dose_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_1dose_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_1dose_Snus", "m2_SIM2_1dose_Snus", "m3_SIM2_1dose_Snus", 
+                           "m4_SIM2_1dose_Snus")])
+
+
+##### Two doses #####
+print("##### Two doses #####")
+# Crude model
+m1_SIM2_2doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_2doses ~ factor(snus_status), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_2doses_Snus))
+
+# Adjusted for age and sex
+m2_SIM2_2doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_2doses ~ factor(snus_status) +
+                                     factor(sex) + pspline(age_cont), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_2doses_Snus))
+
+# Adjusted for confounders
+m3_SIM2_2doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_2doses ~ factor(snus_status) + 
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) +
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_2doses_Snus))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM2_2doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_2doses ~ factor(snus_status) +
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) + 
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi) + factor(case_C1), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_2doses_Snus))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_2doses_Snus)), 
+                             confint(MIcombine(m1_SIM2_2doses_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_2doses_Snus)), 
+                             confint(MIcombine(m2_SIM2_2doses_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_2doses_Snus)), 
+                             confint(MIcombine(m3_SIM2_2doses_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_2doses_Snus)), 
+                             confint(MIcombine(m4_SIM2_2doses_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_2doses_Snus[[1]]$data)
+nrow(m2_SIM2_2doses_Snus[[1]]$data)
+nrow(m3_SIM2_2doses_Snus[[1]]$data)
+nrow(m4_SIM2_2doses_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_2doses_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_2doses_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_2doses_Snus", "m2_SIM2_2doses_Snus", "m3_SIM2_2doses_Snus", 
+                           "m4_SIM2_2doses_Snus")])
+
+
+##### Three doses #####
+print("##### Three doses #####")
+# Crude model
+m1_SIM2_3doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_3doses ~ factor(snus_status), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_3doses_Snus))
+
+# Adjusted for age and sex
+m2_SIM2_3doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_3doses ~ factor(snus_status) +
+                                     factor(sex) + pspline(age_cont), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_3doses_Snus))
+
+# Adjusted for confounders
+m3_SIM2_3doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_3doses ~ factor(snus_status) + 
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) +
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_3doses_Snus))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM2_3doses_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_3doses ~ factor(snus_status) +
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) + 
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi) + factor(case_C1), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_3doses_Snus))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_3doses_Snus)), 
+                             confint(MIcombine(m1_SIM2_3doses_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_3doses_Snus)), 
+                             confint(MIcombine(m2_SIM2_3doses_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_3doses_Snus)), 
+                             confint(MIcombine(m3_SIM2_3doses_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_3doses_Snus)), 
+                             confint(MIcombine(m4_SIM2_3doses_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_3doses_Snus[[1]]$data)
+nrow(m2_SIM2_3doses_Snus[[1]]$data)
+nrow(m3_SIM2_3doses_Snus[[1]]$data)
+nrow(m4_SIM2_3doses_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_3doses_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_3doses_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_3doses_Snus", "m2_SIM2_3doses_Snus", "m3_SIM2_3doses_Snus", 
+                           "m4_SIM2_3doses_Snus")])
+
+
+##### Spacing between 1st and 2nd dose ####
+print("##### Spacing between 1st and 2nd dose #####")
+# Crude model
+m1_SIM2_I12_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim2_20weeks12 ~ factor(snus_status), 
+                                family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_I12_Snus))
+
+# Adjusted for age and sex
+m2_SIM2_I12_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim2_20weeks12 ~ factor(snus_status) +
+                                  factor(sex) + pspline(age_cont), 
+                                family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_I12_Snus))
+
+# Adjusted for confounders
+m3_SIM2_I12_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim2_20weeks12 ~ factor(snus_status) + 
+                                  factor(sex) + pspline(age_cont) + 
+                                  factor(educ_tertiles) + 
+                                  factor(maritalstatus_bin) +
+                                  factor(mother_tongue) +
+                                  factor(involvement_attend_j) + 
+                                  factor(fs_shp_koodi), 
+                                family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_I12_Snus))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1 (all)
+m4_SIM2_I12_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim2_20weeks12 ~ factor(snus_status) +
+                                  factor(sex) + pspline(age_cont) + 
+                                  factor(educ_tertiles) + 
+                                  factor(maritalstatus_bin) +
+                                  factor(mother_tongue) + 
+                                  factor(involvement_attend_j) + 
+                                  factor(fs_shp_koodi) + factor(case_C1), 
+                                family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_I12_Snus))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_I12_Snus)), 
+                             confint(MIcombine(m1_SIM2_I12_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_I12_Snus)), 
+                             confint(MIcombine(m2_SIM2_I12_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_I12_Snus)), 
+                             confint(MIcombine(m3_SIM2_I12_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_I12_Snus)), 
+                             confint(MIcombine(m4_SIM2_I12_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_I12_Snus[[1]]$data)
+nrow(m2_SIM2_I12_Snus[[1]]$data)
+nrow(m3_SIM2_I12_Snus[[1]]$data)
+nrow(m4_SIM2_I12_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_I12_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_I12_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_I12_Snus", "m2_SIM2_I12_Snus", "m3_SIM2_I12_Snus", 
+                           "m4_SIM2_I12_Snus")])
+
+
+##### Spacing between 2nd and 3rd dose ####
+print("##### Spacing between 2nd and 3rd dose #####")
+# Crude model
+m1_SIM2_I23_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim2_7months23 ~ factor(snus_status), 
+                                family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_I23_Snus))
+
+# Adjusted for age and sex
+m2_SIM2_I23_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim2_7months23 ~ factor(snus_status) +
+                                  factor(sex) + pspline(age_cont), 
+                                family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_I23_Snus))
+
+# Adjusted for confounders
+m3_SIM2_I23_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim2_7months23 ~ factor(snus_status) + 
+                                  factor(sex) + pspline(age_cont) + 
+                                  factor(educ_tertiles) + 
+                                  factor(maritalstatus_bin) +
+                                  factor(mother_tongue) +
+                                  factor(involvement_attend_j) + 
+                                  factor(fs_shp_koodi), 
+                                family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_I23_Snus))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM2_I23_Snus <- with(subset(des_final, between(age_cont, 20, 74)), 
+                         svyglm(event_sim2_7months23 ~ factor(snus_status) +
+                                  factor(sex) + pspline(age_cont) + 
+                                  factor(educ_tertiles) + 
+                                  factor(maritalstatus_bin) +
+                                  factor(mother_tongue) + 
+                                  factor(involvement_attend_j) + 
+                                  factor(fs_shp_koodi) + factor(case_C1), 
+                                family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_I23_Snus))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_I23_Snus)), 
+                             confint(MIcombine(m1_SIM2_I23_Snus)))), 2)[2:3,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_I23_Snus)), 
+                             confint(MIcombine(m2_SIM2_I23_Snus)))), 2)[2:3,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_I23_Snus)), 
+                             confint(MIcombine(m3_SIM2_I23_Snus)))), 2)[2:3,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_I23_Snus)), 
+                             confint(MIcombine(m4_SIM2_I23_Snus)))), 2)[2:3,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_I23_Snus[[1]]$data)
+nrow(m2_SIM2_I23_Snus[[1]]$data)
+nrow(m3_SIM2_I23_Snus[[1]]$data)
+nrow(m4_SIM2_I23_Snus[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_I23_Snus))[2:3], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_I23_Snus))[2:3], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_I23_Snus", "m2_SIM2_I23_Snus", "m3_SIM2_I23_Snus", 
+                           "m4_SIM2_I23_Snus")])
+```
+
+### 6.3 Tobacco
+
+```{r SIM2_Tobacco}
+##### One dose #####
+print("##### One dose #####")
+# Crude model
+m1_SIM2_1dose_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                              svyglm(event_sim2_1dose ~ factor(tobacco_use), 
+                                     family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_1dose_Tobacco))
+
+# Adjusted for age and sex
+m2_SIM2_1dose_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                              svyglm(event_sim2_1dose ~ factor(tobacco_use) + 
+                                       factor(sex) + pspline(age_cont), 
+                                     family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_1dose_Tobacco))
+
+# Adjusted for confounders
+m3_SIM2_1dose_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                              svyglm(event_sim2_1dose ~ factor(tobacco_use) + 
+                                       factor(sex) + pspline(age_cont) + 
+                                       factor(educ_tertiles) + 
+                                       factor(maritalstatus_bin) + 
+                                       factor(mother_tongue) +
+                                       factor(involvement_attend_j) + 
+                                       factor(fs_shp_koodi), 
+                                     family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_1dose_Tobacco))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM2_1dose_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                              svyglm(event_sim2_1dose ~ factor(tobacco_use) +
+                                       factor(sex) + pspline(age_cont) + 
+                                       factor(educ_tertiles) + 
+                                       factor(maritalstatus_bin) + 
+                                       factor(mother_tongue) + 
+                                       factor(involvement_attend_j) + 
+                                       factor(fs_shp_koodi) + factor(case_C1), 
+                                     family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_1dose_Tobacco))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_1dose_Tobacco)), 
+                             confint(MIcombine(m1_SIM2_1dose_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_1dose_Tobacco)), 
+                             confint(MIcombine(m2_SIM2_1dose_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_1dose_Tobacco)), 
+                             confint(MIcombine(m3_SIM2_1dose_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_1dose_Tobacco)), 
+                             confint(MIcombine(m4_SIM2_1dose_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_1dose_Tobacco[[1]]$data)
+nrow(m2_SIM2_1dose_Tobacco[[1]]$data)
+nrow(m3_SIM2_1dose_Tobacco[[1]]$data)
+nrow(m4_SIM2_1dose_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_1dose_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_1dose_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_1dose_Tobacco", "m2_SIM2_1dose_Tobacco", "m3_SIM2_1dose_Tobacco", 
+                           "m4_SIM2_1dose_Tobacco")])
+
+
+##### Two doses #####
+print("##### Two doses #####")
+# Crude model
+m1_SIM2_2doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim2_2doses ~ factor(tobacco_use), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_2doses_Tobacco))
+
+# Adjusted for age and sex
+m2_SIM2_2doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim2_2doses ~ factor(tobacco_use) +
+                                        factor(sex) + pspline(age_cont), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_2doses_Tobacco))
+
+# Adjusted for confounders
+m3_SIM2_2doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim2_2doses ~ factor(tobacco_use) + 
+                                        factor(sex) + pspline(age_cont) + 
+                                        factor(educ_tertiles) + 
+                                        factor(maritalstatus_bin) +
+                                        factor(mother_tongue) +
+                                        factor(involvement_attend_j) + 
+                                        factor(fs_shp_koodi), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_2doses_Tobacco))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM2_2doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim2_2doses ~ factor(tobacco_use) +
+                                        factor(sex) + pspline(age_cont) + 
+                                        factor(educ_tertiles) + 
+                                        factor(maritalstatus_bin) +
+                                        factor(mother_tongue) + 
+                                        factor(involvement_attend_j) + 
+                                        factor(fs_shp_koodi) + factor(case_C1), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_2doses_Tobacco))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_2doses_Tobacco)), 
+                             confint(MIcombine(m1_SIM2_2doses_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_2doses_Tobacco)), 
+                             confint(MIcombine(m2_SIM2_2doses_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_2doses_Tobacco)), 
+                             confint(MIcombine(m3_SIM2_2doses_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_2doses_Tobacco)), 
+                             confint(MIcombine(m4_SIM2_2doses_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_2doses_Tobacco[[1]]$data)
+nrow(m2_SIM2_2doses_Tobacco[[1]]$data)
+nrow(m3_SIM2_2doses_Tobacco[[1]]$data)
+nrow(m4_SIM2_2doses_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_2doses_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_2doses_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_2doses_Tobacco", "m2_SIM2_2doses_Tobacco", "m3_SIM2_2doses_Tobacco", 
+                           "m4_SIM2_2doses_Tobacco")])
+
+
+##### Three doses #####
+print("##### Three doses #####")
+# Crude model
+m1_SIM2_3doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim2_3doses ~ factor(tobacco_use), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_3doses_Tobacco))
+
+# Adjusted for age and sex
+m2_SIM2_3doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim2_3doses ~ factor(tobacco_use) +
+                                        factor(sex) + pspline(age_cont), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_3doses_Tobacco))
+
+# Adjusted for confounders
+m3_SIM2_3doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim2_3doses ~ factor(tobacco_use) + 
+                                        factor(sex) + pspline(age_cont) + 
+                                        factor(educ_tertiles) + 
+                                        factor(maritalstatus_bin) +
+                                        factor(mother_tongue) +
+                                        factor(involvement_attend_j) + 
+                                        factor(fs_shp_koodi), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_3doses_Tobacco))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM2_3doses_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                               svyglm(event_sim2_3doses ~ factor(tobacco_use) +
+                                        factor(sex) + pspline(age_cont) + 
+                                        factor(educ_tertiles) + 
+                                        factor(maritalstatus_bin) +
+                                        factor(mother_tongue) + 
+                                        factor(involvement_attend_j) + 
+                                        factor(fs_shp_koodi) + factor(case_C1), 
+                                      family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_3doses_Tobacco))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_3doses_Tobacco)), 
+                             confint(MIcombine(m1_SIM2_3doses_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_3doses_Tobacco)), 
+                             confint(MIcombine(m2_SIM2_3doses_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_3doses_Tobacco)), 
+                             confint(MIcombine(m3_SIM2_3doses_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_3doses_Tobacco)), 
+                             confint(MIcombine(m4_SIM2_3doses_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_3doses_Tobacco[[1]]$data)
+nrow(m2_SIM2_3doses_Tobacco[[1]]$data)
+nrow(m3_SIM2_3doses_Tobacco[[1]]$data)
+nrow(m4_SIM2_3doses_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_3doses_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_3doses_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_3doses_Tobacco", "m2_SIM2_3doses_Tobacco", "m3_SIM2_3doses_Tobacco", 
+                           "m4_SIM2_3doses_Tobacco")])
+
+
+##### Spacing between 1st and 2nd dose ####
+print("##### Spacing between 1st and 2nd dose #####")
+# Crude model
+m1_SIM2_I12_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_20weeks12 ~ factor(tobacco_use), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_I12_Tobacco))
+
+# Adjusted for age and sex
+m2_SIM2_I12_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_20weeks12 ~ factor(tobacco_use) +
+                                     factor(sex) + pspline(age_cont), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_I12_Tobacco))
+
+# Adjusted for confounders
+m3_SIM2_I12_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_20weeks12 ~ factor(tobacco_use) + 
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) +
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_I12_Tobacco))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1 (all)
+m4_SIM2_I12_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_20weeks12 ~ factor(tobacco_use) +
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) + 
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi) + factor(case_C1), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_I12_Tobacco))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_I12_Tobacco)), 
+                             confint(MIcombine(m1_SIM2_I12_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_I12_Tobacco)), 
+                             confint(MIcombine(m2_SIM2_I12_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_I12_Tobacco)), 
+                             confint(MIcombine(m3_SIM2_I12_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_I12_Tobacco)), 
+                             confint(MIcombine(m4_SIM2_I12_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_I12_Tobacco[[1]]$data)
+nrow(m2_SIM2_I12_Tobacco[[1]]$data)
+nrow(m3_SIM2_I12_Tobacco[[1]]$data)
+nrow(m4_SIM2_I12_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_I12_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_I12_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+
+rm(list = ls()[ls() %in% c("m1_SIM2_I12_Tobacco", "m2_SIM2_I12_Tobacco", "m3_SIM2_I12_Tobacco", 
+                           "m4_SIM2_I12_Tobacco")])
+
+
+##### Spacing between 2nd and 3rd dose ####
+print("##### Spacing between 2nd and 3rd dose #####")
+# Crude model
+m1_SIM2_I23_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_7months23 ~ factor(tobacco_use), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m1_SIM2_I23_Tobacco))
+
+# Adjusted for age and sex
+m2_SIM2_I23_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_7months23 ~ factor(tobacco_use) +
+                                     factor(sex) + pspline(age_cont), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m2_SIM2_I23_Tobacco))
+
+# Adjusted for confounders
+m3_SIM2_I23_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_7months23 ~ factor(tobacco_use) + 
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) +
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m3_SIM2_I23_Tobacco))
+
+# Adjusted for COVID-19 cases 
+# Adjusted for C1
+m4_SIM2_I23_Tobacco <- with(subset(des_final, between(age_cont, 20, 74)), 
+                            svyglm(event_sim2_7months23 ~ factor(tobacco_use) +
+                                     factor(sex) + pspline(age_cont) + 
+                                     factor(educ_tertiles) + 
+                                     factor(maritalstatus_bin) +
+                                     factor(mother_tongue) + 
+                                     factor(involvement_attend_j) + 
+                                     factor(fs_shp_koodi) + factor(case_C1), 
+                                   family = quasipoisson()))
+# summary(MIcombine(m4_SIM2_I23_Tobacco))
+
+# Obtains main estimates
+knitr::kable(round(exp(cbind(coef(MIcombine(m1_SIM2_I23_Tobacco)), 
+                             confint(MIcombine(m1_SIM2_I23_Tobacco)))), 2)[2:5,], 
+             caption = "M1: Crude model") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m2_SIM2_I23_Tobacco)), 
+                             confint(MIcombine(m2_SIM2_I23_Tobacco)))), 2)[2:5,], 
+             caption = "M2: Adjusted for age and sex") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m3_SIM2_I23_Tobacco)), 
+                             confint(MIcombine(m3_SIM2_I23_Tobacco)))), 2)[2:5,], 
+             caption = "M3: Adjusted for confounders") %>%
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(round(exp(cbind(coef(MIcombine(m4_SIM2_I23_Tobacco)), 
+                             confint(MIcombine(m4_SIM2_I23_Tobacco)))), 2)[2:5,], 
+             caption = "M4: Adjusted for C1") %>%
+  kable_classic(full_width = F, position = "left")
+
+# Check the estimates are on the same sample
+nrow(m1_SIM2_I23_Tobacco[[1]]$data)
+nrow(m2_SIM2_I23_Tobacco[[1]]$data)
+nrow(m3_SIM2_I23_Tobacco[[1]]$data)
+nrow(m4_SIM2_I23_Tobacco[[1]]$data)
+# n = 29192
+
+# Percent attenuation
+data.frame(M3 = round(coef(MIcombine(m3_SIM2_I23_Tobacco))[2:5], 4),
+           M4 = round(coef(MIcombine(m4_SIM2_I23_Tobacco))[2:5], 4)) %>% 
+  mutate("% Att" = round(100 * (M3 - M4)/M3, 4)) %>% 
+  kable(caption = "Percent attenuation: M3 - M4") %>% 
+  kable_classic(full_width = F, position = "left")
+```
+
+
+# End of Part II

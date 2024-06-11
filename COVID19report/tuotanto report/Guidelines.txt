@@ -1,0 +1,4 @@
+1. This is based on the CoronaReport.R, so run CoronaReport.R first, then run tuotanto.R.
+2. Change the path in the loadWorkbook - the path where excel-template.xlsx is;
+   change WeekNumber;
+   change output_dir to where you want to put the result.

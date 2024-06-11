@@ -1,0 +1,5 @@
+1. Open templ.rmd to change ESH_file, PTH_file and SOS_file to the latest file path (And also the path of template.docx)
+2. Use render.R to create PDF files.
+	Something that you need to change manually: 
+		output_dir in the render_report function;
+		and date in the for loop.

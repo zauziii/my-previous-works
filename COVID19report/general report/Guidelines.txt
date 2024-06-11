@@ -1,0 +1,21 @@
+data.xlsx contains necesary info for making figures.
+raw files contain data to last week.
+ppt-template.pptx is the template for generating general report.
+
+Before starting:
+
+!!! Manaually change lopa_created
+
+Recommend use 
+    format(floor_date(ymd(str_extract_all("2022-02-07", "\\d{4}-\\d{2}-\\d{2}")), unit = "week"), "%G-%V")
+to get the date which correctly yields the week. For example, we have "2022-02-07 10:20:12" in the lopa_created. By using the code mentioned above, it 
+gives "2022-05" and it is correct for our analysis. So copy "2022-02-07 10:20:12", and replace those are not, like "2022-02-03 11:28:26" or "2022-02-04 14:02:15" and save the xls file.
+
+
+1. Open CoronaReport.R, replace path/info with correct ones. 
+	???_raw_dir: paths of raw files
+	???_new_dir: paths of new files(xls format)
+	???_updated_dir: program joins and saves raw and new file for next week.
+2. Once the infomation is correct, ctrl + A and run (ctrl + R) run the whole program, the result will be saved in the place where you specified in the ppt_save_dir and with the name you assigned.
+3. Find p5 and print - Export - Save as Image. Save it to the right directory, recommend use Width = 1696 and Height = 640 to reduce the overlap of labels. 
+4. Repalce the p5 by hand in slide 5 (figure created by program overlaps too much) and change the date in slide 1.

@@ -1,0 +1,1564 @@
+---
+title: "Tobrisk analyses - Part I"
+subtitle: "Data cleaning, imputation and summary tables"
+author: "Zhi Zhou and Sebastián Peña"
+date: "Octorber 3, 2023"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+---
+
+```{r setup1, include=FALSE}
+knitr::opts_chunk$set(echo = T,
+                      eval = F,
+                      include = T
+)
+# knitr::opts_chunk$set(echo = F
+# )
+```
+
+# Part I
+
+# Loading packages and data
+
+## Packages
+
+```{r packages1}
+# Loading packages
+library(readxl)
+library(haven)
+library(styler)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(tidyr)
+library(janitor)
+library(gtools)
+library(ggridges)
+library(ggfortify)
+library(tableone)
+library(pollster)
+library(naniar)
+library(survey)
+library(survival)
+library(biostat3)
+library(Epi)
+library(lubridate)
+library(mice)
+library(mitools)
+library(mitml)
+library(Hmisc)
+library(finalfit)
+```
+
+## Data
+
+```{r loading_data}
+# Loading FinSote dataset
+# As we are collaborating on different systems, as to make this work on both,
+# we use:
+path <- "//helfs01.thl.fi/groups4/Tobrisk_FinSote/Data and code/"
+if (.Platform$OS.type == "unix") {
+  path <- "/home/zzhh/mnt/groups4/Tobrisk_FinSote/Data and code/"
+} 
+finsote2018 <- read_sas(paste0(path, "data_f181_death_covid_2022.sas7bdat"))
+finsote2020 <- read_sas(paste0(path, "data_f201_death_covid.sas7bdat"))
+finsote2020_dates <- read_excel(paste0(path, "FinSote2020/F201_response_dates.xlsx"))
+finsote2018_vx <- read_sas(paste0(path, "data_f181_vaccination_2022.sas7bdat"))
+finsote2020_vx <- read_sas(paste0(path, "data_f201_vaccination_2022.sas7bdat"))
+```
+
+# Data wrangling
+
+## Data wrangling of vaccine data
+
+We used data from the Register of Primary Health Care visits (Avohilmo) which comes directly from health service providers. Avohilmo vaccination data contains data on all vaccinations the person has taken, which includes COVID-19 vaccines but also information on other vaccines. Therefore, we cleaned the data to uniquely identify COVID-19 vaccinations. In addition, health providers enter by hand the vaccine information, making the register prone to data entry errors which need to be corrected to be able to assign the official COVID-19 vaccine name.
+
+The listing below shows the variables in the dataset.
+
+-   gumm85id: identifier
+-   kaynti_alkoi_pvm: visit start date
+-   kaynti_loppui_pvm: visit end date
+-   laakeaine: ATC
+-   laakepakkausnro: package number
+-   laake_kauppanimi: commercial name
+-   rokote_eranro: batch number
+-   annos_jarjestysnro: dose order
+-   rokote_valmistenimi: vaccine name
+-   vaccine_date: vaccine date
+
+We first combined the data on vaccine names and dates originally coming in two different variables and corrected vaccine names. We then used the ATC code for COVID-19 vaccines (lääkeaine J07BX03) to identify COVID-19 vaccines and, when the ATC was coded 0, -1 or -2, we used the batch number (eränumero) to ascertain the type of COVID-19 vaccine.
+
+```{r dw_vx}
+# Combining two variables with the same information (laake_kauppanimi and rokote_valmistenimi).
+finsote_vx <- finsote2018_vx %>% 
+  bind_rows(finsote2020_vx) %>% 
+  mutate(
+    vaccine_name = case_when(
+      vaccine_name == "" ~ laake_kauppanimi,
+      TRUE ~ vaccine_name),
+    vaccine_date = case_when(
+      vaccine_date == "       ." ~ NA_character_,
+      TRUE ~ vaccine_date)
+  ) 
+
+# Check missings in vaccine_date.
+sum(is.na(finsote_vx$vaccine_date))
+# total 367251 rows in finsote_vx data, and 170498 have missing values
+# 170498/367251 * 100% = 46.4%
+
+##### Batch numbers #####
+Janssen <- c("21C11-04", "21C10-05", "XD955", "XD975")
+Comirnaty <- c("1F1012A" , "1F1046A", "1F1053A", "1F1054A", "1F1059A", "1G044A",
+               "1G047A", "1K079A", "1K081A", "1L084A", "1L085A", "31134TB", 
+               "8000088", "8000282", "8001016", "ACA9551", "ACB2638", "ACB3999",
+               "ACC5779", "EJ6134", "EJ6790", "EJ6795", "EJ6796", "EJ6797", 
+               "EK9788", "EL0725", "EL1491", "EP2163", "EP2166", "ET1831",
+               "ET6956", "ET7205", "EW2239", "EW2246", "EW4815", "EY3014", 
+               "EY7015", "FA4598", "FC0681", "FC2336", "FC3098", "FC3558", 
+               "FC8736", "FD0932", "FD1921", "FD4555", "FE2296", "FE3065", 
+               "FE7051", "FF0680", "FF2832", "FF2834", "FF3318", "FF4213", 
+               "FG4509", "FH0161", "FH3221", "FH4752", "FH8773", "FH9951", 
+               "FJ5973", "FJ8041", "FK6303", "FK9707", "FL4213", "FL4574", 
+               "FL5324", "FM4289", "FM7533", "FM9088", "FN1671", "FN5519", 
+               "FN9509", "FP8234", "FP9604", "FP9632", "FR1790", "FR3566", 
+               "FR9187", "PCB0003", "PCB0004", "SDCC8", "SDDC1", "SDEH4", 
+               "SDEU1", "SDFE2", "SDFP3", "SDHJ6")
+Nuvaxovid <- c("4301MF009", "4301MF012", "4301MF015", "4302MF016", "4302MF018", 
+               "4302MF030")
+Vaxzevria <- c("ABV3025", "ABV3374", "ABV4678", "ABV5297", "ABV5811", "ABV6096",
+               "ABV7764", "ABW0891", "ABW1277", "ABW2953", "ABW9941", "ABX3502", 
+               "ABX3507", "NJ0138")
+
+
+##### Identifying COVID-19 vaccines and managing names #####
+# Split data by laakeaine (ATC classification group) 
+laakeaine <- split(finsote_vx, f = finsote_vx$laakeaine)
+laakepakkausnro <- split(finsote_vx, f = finsote_vx$laakepakkausnro)
+
+##### J07 #####
+# Extract J07 from laakeaine
+J07 <- laakeaine$J07
+# Tabulate J07 by vaccine_name, 13 are named as Moderna
+#  the others are not COVID-19 vaccine
+table(J07$vaccine_name)
+# Subset and edit names
+J07 <- laakeaine$J07 %>% 
+  subset(vaccine_name == "Moderna") %>% 
+  mutate(vaccine_name = "spikevax")
+
+##### J07BX03 #####
+# Correct names by given information
+J07BX03 <- laakeaine$J07BX03 %>% 
+  mutate(vaccine_name = case_when(
+    laakepakkausnro %in% c("464201", "424981") ~ "janssen",
+    laakepakkausnro %in% c("140099", "165049", "488024", 
+                           "516605", "545117", "072046",
+                           "578912")  ~ "comirnaty",
+    laakepakkausnro %in% c("152354") ~ "nuvaxovid",
+    laakepakkausnro %in% c("485348", "046973") ~ "spikevax",
+    laakepakkausnro %in% c("553555") ~ "vaxzevria",
+    laakepakkausnro %in% c("-1") ~ "comirnaty",
+    TRUE ~ vaccine_name)
+  ) %>% 
+  mutate(rokote_eranro = toupper(rokote_eranro) %>%                                   
+           str_replace_all(.," ",""),
+         # Turn all letters in batch number to upper class
+         # and remove space
+         vaccine_name = tolower(vaccine_name)
+         # Turn all letters in the vaccine_name to lower case
+  )                      
+
+# According to the package number,
+# we have all vaccine names corrected in J07BX03 when the package number is not 0 (n=103024).
+J07BX03_01 <- J07BX03 %>%                             
+  subset(laakepakkausnro != 0)                        
+
+# We get the rest (package number = 0, n=29591), and assign them using the batch number
+J07BX03_02 <- J07BX03 %>%                             
+  subset(laakepakkausnro == 0) %>%                
+  mutate(vaccine_name = case_when(rokote_eranro %in% Comirnaty ~ "comirnaty",
+                                  rokote_eranro %in% Vaxzevria ~ "vaxzevria",
+                                  rokote_eranro %in% Nuvaxovid ~ "nuvaxovid",
+                                  rokote_eranro %in% Janssen ~ "janssen",
+                                  TRUE ~ vaccine_name))
+
+# After this procedure, we still have 5617 entries of COVID-19 vaccines without a
+#harmonized name
+J07BX03_03 <- J07BX03_02 %>% 
+  subset(!vaccine_name %in% c("comirnaty", "vaxzevria", 
+                              "nuvaxovid", "janssen", "spikevax")
+         # select names != comirnaty, vaxzevria, nuvaxovid, janssen, spikevax
+  )
+
+# Tabulate J07BX03_03 by vaccine_name
+table(J07BX03_03$vaccine_name)
+# We have: 
+# 0: 2
+# comirnaty original/omicron ba.1: 314
+# comirnaty original/omicron ba.4-5: 416
+# cov19 astrazeneca: 1
+# cov19 moderna: 10
+# covid-19 vaccine astrazeneca: 61
+# covid-19 vaccine janssen: 3 
+# covid-19 vaccine moderna: 4792
+# spikevax bivalent original/omicron ba.1: 1
+# vaccine moderna: 17
+# So, if a name contains string "comirnaty", it is shortened to "comirnaty";
+# with "astrazeneca", we rename them to "vaxzevria";
+# with "moderna" or "spikevax", we rename them to "spikevax";
+# with "janssen", we rename them to "janssen";
+# When name = 0, the rokote_eranro = G26761A, and it belongs to spikevax.
+J07BX03_03 <- J07BX03_03 %>% 
+  mutate(vaccine_name = case_when(
+    grepl(".*comirnaty", vaccine_name) ~ "comirnaty",
+    grepl(".*astrazeneca", vaccine_name) ~ "vaxzevria",
+    grepl(".*moderna|.*spikevax|0", vaccine_name) ~ "spikevax",
+    grepl(".*janssen", vaccine_name) ~ "janssen"
+  ))
+
+# So, the J07BX03 should be a combination of J07BX03_01, J07BX03_02, J07BX03_03.
+J07BX03_final <- bind_rows(J07BX03_01, 
+                           J07BX03_02 %>% subset(
+                             vaccine_name %in% c("comirnaty", "vaxzevria", 
+                                                 "nuvaxovid", "janssen", "spikevax")),
+                           J07BX03_03)
+
+# Tabulate J07BX03_final by vaccine_name. No missing values.
+table(J07BX03_final$vaccine_name, useNA = "ifany")
+# We have:
+# comirnaty: 106770,
+# janssen: 8
+# nuvaxovid: 19
+# speikevax: 20958
+# vaxzevria: 4860
+# Names are corrected
+# n(J07BX03_final) = n(J07BX03)
+
+
+##### "-1" #####
+# Extract -1 from laakeaine
+M1 <- laakeaine$`-1`
+# 10 cases in total, and 6 are named as "Covid-19 vaccine moderna"
+#  the others are not COVID19 vaccine.
+M1 <- M1 %>% 
+  subset(vaccine_name == "Covid-19 vaccine moderna") %>% 
+  mutate(vaccine_name = "spikevax")
+
+
+##### "0" #####
+# Extract 0 from laakeaine (n=61801), 
+#  toupper batch numbers & remove space (if exists),
+#  tolower vaccine_name.
+Z <- laakeaine$`0` %>% 
+  mutate(rokote_eranro = toupper(rokote_eranro) %>%                                   
+           str_replace_all(.," ",""),
+         # Turn all letters in batch number to upper class
+         # and romove space
+         vaccine_name = tolower(vaccine_name)
+         # Turn all letters in the vaccine_name to lower case
+  )
+
+# We first used the batch number in J07BX03_final to rename vaccine_name
+Z_1 <- Z %>% 
+  subset(rokote_eranro %in% unique(J07BX03_final$rokote_eranro))
+
+# Let's check the names
+Z1_vxn <- unique(Z_1$vaccine_name) %>% data.frame()
+# 355 different names. Let's make it simpler. 
+# Find comirnaty
+Z1_vxn_comirnaty <- split(Z1_vxn, 
+                          f = grepl(".*com|.*bnt162|.*bio|.*naty|.*pfizer", 
+                                    Z1_vxn$.))
+Z1_vxn_comirnaty_final <- Z1_vxn_comirnaty[["TRUE"]]
+# We found that vaccine_name = "comirnatycovid-19 vaccine mode" is 
+#  misleading, the associated batch numbers are 3004498 & FH9951.
+# 3004498 is spikevax while FH9951 is comirnaty.
+# Find moderna
+Z1_vxn_moderna <- split(Z1_vxn_comirnaty[["FALSE"]], 
+                        f = grepl(".*mode|.*mod|.*spikeva|.*mocerna", 
+                                  Z1_vxn_comirnaty[["FALSE"]]$.))
+Z1_vxn_moderna_final <- Z1_vxn_moderna[["TRUE"]]
+# Find vaxzevria
+Z1_vxn_vaxzevria <- split(Z1_vxn_moderna[["FALSE"]], 
+                          f = grepl(".*astra|.*vaxevria|.*vaxzevria|.*astar|.*az", 
+                                    Z1_vxn_moderna[["FALSE"]]$.))
+Z1_vxn_vaxzevria_final <- Z1_vxn_vaxzevria[["TRUE"]]
+# Find with string "covid" or "cov"
+Z1_vxn_covid <- split(Z1_vxn_vaxzevria[["FALSE"]], 
+                      f = grepl(".*covid|.*cov", Z1_vxn_vaxzevria[["FALSE"]]$.))
+Z1_vxn_covid_final <- Z1_vxn_covid[["TRUE"]]
+# The others
+Z1_vxn_others <- Z1_vxn_covid[["FALSE"]]
+
+# Check names in Z1_vxn_covid_final  
+# 129 covid-19 vaccine: 
+#   4, 300042722, 3000489, 3001413, 300042698, spikevax
+# covid-19 vaccine:
+#   6, ABV3025, ABV4678, ABV6096, ABV3374, 
+#   ABV1277, ABW1277, vaxzevria
+# covid-19 vaccine a:
+#   7, ABV6096, ABW5811, ABV3374, ABW1277, ABV5811, ABV3025,
+#   ABV4678, vaxzevria
+# covid-19-mrna:
+#   1, EL0725, comirnaty
+# covid-19:
+#   4, ABW1277, vaxzevria; ELO725, ET1831, comirnaty; G26761A, spikevax
+# 129 covid-19 vaccin:
+#   3, 3001413, 3000489, 300042722, spikevax
+# covid-19 vaccines:
+#   1, ABW9941, vaxzevria
+# ticovac: 
+#   misclassified as we used keywords "cov"
+# covid-19 vaccine:
+#   7, ABV3025, ABW1277, ABV6096, ABV1277, ABV4678, 
+#   ABV5811, vaxzevria; EL1491, comirnaty
+# 129 covid-19 vaci, 1:
+#   3000489, spikevax
+# covid rokotus käynti:
+#   rokote_eranro = 0, no information related to the names,
+#   mark this as "covid"
+# covid-19vaccinemo:
+#   1, 3001413, spikevax
+# covid-19-rokotteet:
+#   1, EL0725, comirnaty
+# covid-19vaccineas: 
+#   2, ABV5811, ABV4678, vaxzevria
+# covid-19 vaccine mr:
+#   1, 3001940, spikevax
+# * covid, covid-19:
+#   1, EP2163, comirnaty
+# cov-19:
+#   1, 3001942, spikevax.
+# covid:
+#   2, ET1831, comirnaty; 3001413, spikevax. 
+# covid-19 vaccinemo:
+#   1, 3001940, spikevax.
+# covid-19vaccin:
+#   1, ABV5811, vaxzevria.
+# covid4:
+#   1, 000227A, spikevax.
+# covid-19 vacci:
+#   1, ABV3374, vaxzevria.
+# covid 19:
+#   1, EP2163, comirnaty.
+# covid1:
+#   1, EP2163, comirnaty.
+# covid 4:
+#   1, FR9187, comirnaty.
+
+Z_1 <- Z_1 %>% 
+  mutate(vaccine_name = case_when(
+    grepl("EL0725|ELO725|ET1831|EL1491|EP2163|FR9187|FH9951", 
+          rokote_eranro) ~ "comirnaty",
+    grepl("ABV3025|ABV4678|ABV6096|ABV3374|ABV1277|ABW1277|ABW5811|ABV5811|ABW9941", 
+          rokote_eranro) ~ "vaxzevria",
+    grepl("300042722|3000489|3001413|300042698|G26761A|3001940|3001942|000227A|3004498", 
+          rokote_eranro) ~ "spikevax",
+    TRUE ~ vaccine_name))
+
+# Check names in Z1_vxn_others. Not all of them worth to check.
+# We check 0, inf, kor1, koronarokote 1., 100.000, abv5811, 1g044a, 2005.
+# 0: 29,
+# V3J651V, V3J603V, W3F681V, V3H571V, V3H553V, V3H641V, V3H64, W3E392V, V3J573V, 
+#    W3E761V, vaxiprip
+# DT374A, ditebooster
+# 216043, 000185A, 000057A, 3006274, spikevax
+# EJ6790, GD6799, SDCC8, FP9604, FD4555, FC0681, FA4598, EY3014, ET6956, GH9851,
+#    EY7015, comirnaty
+# 0000, XXXX, not covid vaccine
+# and couldn't do anything to 0 as both vaccine_name & batch number = 0
+# kor1", 1, 3001413, corrected in previous step
+# koronarokote 1.", couldn't do anything, as rokote_eranro = 0.
+# 100.000", cannot do anything, as rokote_eranro = 0.
+# abv5811", rokote_eranro = ABV5811, vaxzevria
+# 1g044a", 1G044A, comirnaty
+# 2005, cannot do anything, as there is not enough information
+
+Z_1 <- Z_1 %>% 
+  mutate(vaccine_name = case_when(
+    grepl("EJ6790|GD6799|SDCC8|FP9604|FD4555|FC0681|FA4598|EY3014|ET6956|GH9851|EY7015|1G044A", 
+          rokote_eranro) ~ "comirnaty",
+    grepl("216043|000185A|000057A|3006274|00057A", rokote_eranro) ~ "spikevax",
+    TRUE ~ vaccine_name))
+
+# And V3J651V, V3H571V, W3F681V, V3J603V, V3H553V, V3H641V, V3H64, W3E392V, V3J573V, W3E761V,
+#   DT374A, 0000, XXXX should not be in J07BX03.
+
+Z_1_1 <- Z_1 %>% 
+  subset(vaccine_name %in% c("spikevax", "comirnaty", "vaxzevria"))
+Z_1_2 <- Z_1 %>% 
+  subset(!vaccine_name %in% c("spikevax", "comirnaty", "vaxzevria")) %>% 
+  mutate(vaccine_name = case_when(
+    .$vaccine_name %in% Z1_vxn_comirnaty_final$. ~ "comirnaty",
+    .$vaccine_name %in% Z1_vxn_vaxzevria_final$. ~ "vaxzevria",
+    .$vaccine_name %in% Z1_vxn_moderna_final$. ~ "spikevax",
+    TRUE ~ vaccine_name)) 
+# We found that some cases are misclassified, 
+# FL5324, 1F1012A, ACB3999, FL4213, FM7533, FJ8041 comirnaty
+# 090F21A, spikevax
+Z_1_2_1 <- Z_1_2 %>% 
+  subset(vaccine_name %in% c("spikevax", "comirnaty", "vaxzevria")) 
+Z_1_2_2 <- Z_1_2 %>% 
+  subset(!vaccine_name %in% c("spikevax", "comirnaty", "vaxzevria")) %>% 
+  mutate(vaccine_name = case_when(
+    grepl("FL5324|1F1012A|ACB3999|FL4213|FM7533|FJ8041", rokote_eranro) ~ "comirnaty",
+    grepl("090F21A", rokote_eranro) ~ "spikevax",
+    TRUE ~ vaccine_name)) %>% 
+  subset(vaccine_name %in% c("comirnaty", "vaxzevria", "spikevax"))
+# Get final Z1
+Z1_final <- bind_rows(Z_1_1, Z_1_2_1, Z_1_2_2)
+
+# We still need to check if we have something missing in zero
+Z_2 <- Z %>% 
+  subset(!rokote_eranro %in% unique(J07BX03_final$rokote_eranro))
+# Let's check the names
+Z2_vxn <- unique(Z_2$vaccine_name) %>% data.frame()
+# 1034 different names. Let's make it simpler. 
+# Find comirnaty
+Z2_vxn_comirnaty <- split(Z2_vxn, 
+                          f = grepl(".*com|.*bnt162|.*bio|.*naty|.*pfizer", 
+                                    Z2_vxn$.))
+Z2_vxn_comirnaty_final <- Z2_vxn_comirnaty[["TRUE"]]
+# Find moderna
+Z2_vxn_moderna <- split(Z2_vxn_comirnaty[["FALSE"]], 
+                        f = grepl(".*mode|.*mod|.*spikeva|.*mocerna", 
+                                  Z2_vxn_comirnaty[["FALSE"]]$.))
+Z2_vxn_moderna_final <- Z2_vxn_moderna[["TRUE"]]
+# Find vaxzevria
+Z2_vxn_vaxzevria <- split(
+  Z2_vxn_moderna[["FALSE"]], 
+  f = grepl(".*astra|.*vaxevria|.*vaxzevria|.*astar|.*az", 
+            Z2_vxn_moderna[["FALSE"]]$.))
+Z2_vxn_vaxzevria_final <- Z2_vxn_vaxzevria[["TRUE"]]
+# Find with string "covid" or "cov"
+Z2_vxn_covid <- split(Z2_vxn_vaxzevria[["FALSE"]], 
+                      f = grepl(".*covid|.*cov-1", 
+                                Z2_vxn_vaxzevria[["FALSE"]]$.))
+# Use keywords: covid & cov-1 to find covid related vaccine, but there is no.
+# And looking into the others, nothing related to COVID19 vaccine.
+Z_2 <- Z_2 %>% 
+  mutate(vaccine_name = case_when(
+    .$vaccine_name %in% Z2_vxn_comirnaty_final$. ~ "comirnaty",
+    .$vaccine_name %in% Z2_vxn_vaxzevria_final$. ~ "vaxzevria",
+    .$vaccine_name %in% Z2_vxn_moderna_final$. ~ "spikevax",
+    TRUE ~ vaccine_name)) %>% 
+  subset(vaccine_name %in% c("comirnaty", "vaxzevria", "spikevax"))
+# Get final Z
+Z_final <- bind_rows(Z1_final, Z_2)
+
+
+##### "-2" #####
+M2 <- laakeaine$`-2` %>% 
+  mutate(rokote_eranro = toupper(rokote_eranro) %>%                                   
+           str_replace_all(.," ",""),
+         # Turn all letters in batch number to upper class
+         # and remove space
+         vaccine_name = tolower(vaccine_name)
+         # Turn all letters in the vaccine_name to lower case
+  )
+
+# Find out vaccines based on given information
+M2 <- M2 %>%                
+  mutate(vaccine_name = case_when(rokote_eranro %in% Comirnaty ~ "comirnaty",
+                                  rokote_eranro %in% Vaxzevria ~ "vaxzevria",
+                                  rokote_eranro %in% Nuvaxovid ~ "nuvaxovid",
+                                  rokote_eranro %in% Janssen ~ "janssen",
+                                  TRUE ~ vaccine_name))
+M2_1 <- M2 %>% 
+  subset(vaccine_name %in% c("comirnaty", "vaxzevria", "spikevax", "janssen",
+                             "nuvaxovid"))
+M2_2 <- M2 %>% 
+  subset(!vaccine_name %in% c("comirnaty", "vaxzevria", "spikevax", "janssen",
+                              "nuvaxovid"))
+# Let's check the names
+M22_vxn <- unique(M2_2$vaccine_name) %>% data.frame()
+# 874 obs. Continue to find comirnaty
+M22_vxn_comirnaty <- split(M22_vxn, 
+                           f = grepl(".*com|.*bnt162|.*bio|.*naty|.*pfizer", 
+                                     M22_vxn$.))
+M22_vxn_comirnaty_final <- M22_vxn_comirnaty[["TRUE"]]
+# Find moderna
+M22_vxn_moderna <- split(M22_vxn_comirnaty[["FALSE"]], 
+                         f = grepl(".*mode|.*mod|.*spikeva|.*mocerna", 
+                                   M22_vxn_comirnaty[["FALSE"]]$.))
+M22_vxn_moderna_final <- M22_vxn_moderna[["TRUE"]]
+# Find vaxzevria
+M22_vxn_vaxzevria <- split(
+  M22_vxn_moderna[["FALSE"]], 
+  f = grepl(".*astra|.*vaxevria|.*vaxzevria|.*astar|.*az", 
+            M22_vxn_moderna[["FALSE"]]$.))
+M22_vxn_vaxzevria_final <- M22_vxn_vaxzevria[["TRUE"]]
+# Find with string "covid" or "cov"
+M22_vxn_covid <- split(M22_vxn_vaxzevria[["FALSE"]], 
+                       f = grepl(".*covid|.*cov-|koron", 
+                                 M22_vxn_vaxzevria[["FALSE"]]$.))
+M22_vxn_covid_final <- M22_vxn_covid[["TRUE"]]
+M22_vxn_others <- M22_vxn_covid[["FALSE"]]
+# Try to find if there is any potential cases in M22_vxn_others, but no.
+# Let's check the batch number for cases in M22_vxn_covid_final
+# covid-19: 
+#   3000489, spikevax
+# covid-19 vaccine:
+#   300042698, spikevax; ABV1277, vaxzevria
+# covid19 vaccine: 
+#   300042698, spikevax
+# cov-p1:
+#   214003, spikevax
+# covid19:
+#   3001413, spikevax
+# koron1:
+#   300042698, spikevax
+# cov-m1:
+#   G26761A, spikevax
+M2_2 <- M2_2 %>% 
+  mutate(vaccine_name = case_when(
+    grepl("ABV1277", rokote_eranro) ~ "vaxzevria",
+    grepl("3000489|300042698|214003|3001413|G26761A", 
+          rokote_eranro) ~ "vaxzevria",
+    TRUE ~ vaccine_name
+  )) %>% 
+  mutate(vaccine_name = case_when(
+    .$vaccine_name %in% M22_vxn_comirnaty_final$. ~ "comirnaty",
+    .$vaccine_name %in% M22_vxn_vaxzevria_final$. ~ "vaxzevria",
+    .$vaccine_name %in% M22_vxn_moderna_final$. ~ "spikevax",
+    TRUE ~ vaccine_name)) %>% 
+  subset(vaccine_name %in% c("comirnaty", "vaxzevria", "spikevax", "janssen",
+                             "nuvaxovid"))
+# The final M2
+M2_final <- bind_rows(M2_1, M2_2)
+
+# Combine 
+vaccine_com <- bind_rows(J07BX03_final, Z_final, M2_final, J07, M1) 
+
+# Find COVID-19 vaccination in other laakeaine (Not -2, -1, 0, J07, J07BX03)
+# However, when we split vaccine data by vaccine name, 
+#  we should remove those rokote_eranro = VO, IM, POISTETTU and 0
+split_vxname <- split(
+  subset(vaccine_com, 
+         rokote_eranro %in% c("VO", "IM", "POISTETTU", "0", "V3J651V", 
+                              "V3H571V", "W3F681V", "V3J603V", "V3H553V", 
+                              "V3H641V", "V3H64", "W3E392V", "V3J573V", 
+                              "W3E761V", "DT374A", "0000", "XXXX", "W3E763V", 
+                              "W3E39", "V3H55", "V3J65", "V3H641") == F), 
+  f = subset(vaccine_com, 
+             rokote_eranro %in% c("VO", "IM", "POISTETTU", "0", "V3J651V", 
+                                  "V3H571V", "W3F681V", "V3J603V", "V3H553V", 
+                                  "V3H641V", "V3H64", "W3E392V", "V3J573V", 
+                                  "W3E761V", "DT374A", "0000", "XXXX", "W3E763V", 
+                                  "W3E39", "V3H55", "V3J65", "V3H641") == F)$vaccine_name)
+
+# Remove (-2, -1, 0, J07, J07BX03) from laakeaine
+laakeaine_others <- laakeaine[names(laakeaine) %in% c("-2", "-1", "0", "J07", "J07BX03")] %>% 
+  do.call(rbind.data.frame, .) %>%
+  mutate(rokote_eranro = toupper(rokote_eranro), 
+         rokote_eranro = str_replace_all(rokote_eranro," ",""))
+
+# Correct vaccine name to official name 
+vx_others <- laakeaine_others %>% 
+  mutate(vaccine_name = case_when(
+    rokote_eranro %in% split_vxname$comirnaty ~ "comirnaty",
+    rokote_eranro %in% split_vxname$`covid-19 vaccine janssen` ~ "janssen",
+    rokote_eranro %in% split_vxname$nuvaxovid ~ "nuvaxovid",
+    rokote_eranro %in% split_vxname$spikevax ~ "spikevax",
+    rokote_eranro %in% split_vxname$vaxzevria ~ "vaxzevria",
+    TRUE ~ vaccine_name)) %>% 
+  subset(vaccine_name %in% names(split_vxname)) %>% 
+  mutate(vaccine_date = case_when(is.na(vaccine_date) ~ kaynti_alkoi_pvm, 
+                                  TRUE ~ vaccine_date)) %>% 
+  distinct(
+    # Remove duplicated cases
+    ., gumm85id, vaccine_date, rokote_eranro, .keep_all = T
+  ) 
+
+
+# After this final procedure, 
+#  we found 105 more cases of COVID-19 vaccines based on the batch number,
+# Final vaccinated participants
+vaccine <- bind_rows(vaccine_com, vx_others) %>% 
+  arrange(gumm85id, vaccine_date) %>% 
+  group_by(gumm85id)
+
+##### Exploring cleaned vaccine data #####
+# 1. Exploring data analysis and missing data
+knitr::kable(table(vaccine$laakeaine, vaccine$vaccine_name), 
+             caption = "Crosstable by laakeaine and vaccine_name")
+miss_var_summary(ungroup(vaccine))
+describe(vaccine)
+# vaccine_date is the only variable that has missing values. 
+
+# Now, we use kaynti_alkoi_pvm to impute missing values in vaccine_date
+vaccine <- vaccine  %>% 
+  mutate(vaccine_date = case_when(is.na(vaccine_date) ~ kaynti_alkoi_pvm, 
+                                  TRUE ~ vaccine_date))
+
+# Finally, we eliminate duplicates when ID, date and batch number are equal
+vaccine <- vaccine %>% 
+  distinct(., gumm85id, rokote_eranro, vaccine_date, .keep_all = T) 
+
+# Check the range of vaccine_date,
+range(vaccine$vaccine_date)
+# Finding the lower limit is not reasonable 
+# Find the unit with date = 20151103
+
+# We replace the vaccine date with the visit date in this one case
+vaccine %>% 
+  subset(vaccine_date == "20151103")
+# Batch number = EW2246, kaynti_alkoi_pvm = 20210419
+# Based on the batch number, we can find the range and it is 20210407 - 20210430
+vaccine %>% 
+  subset(rokote_eranro == "EW2246" & vaccine_date != "20151103") %>% 
+  ungroup() %>% 
+  reframe(range = range(vaccine_date))
+
+# The kaynti_alkoi_pvm falls in the interval. We can use this to fix the date. 
+vaccine[vaccine$vaccine_date == "20151103", ]$vaccine_date <- "20210419"
+# Check the range again, the range is 20201102 - 20221128 now. 
+range(vaccine$vaccine_date)
+# COVID-19 vaccination in Finland started on December 27, 2020.
+
+# Restrict the study period to December 31, 2021 and December 27, 2020
+# But we found that some are not in this range,
+# Suggested by the vaccination team, use visit date to replace vaccine_date.
+NotinRange <- vaccine %>%
+  filter(vaccine_date <= "20201227") %>% 
+  mutate(vaccine_date = kaynti_alkoi_pvm)     # Replacement
+
+# Now, we combine date NotinRange with the vaccine data
+vaccine_final <- bind_rows(vaccine, NotinRange) %>% 
+  filter(vaccine_date <= "20211231" & vaccine_date >= "20201227") 
+# Check the range again
+range(vaccine_final$vaccine_date)
+# All date falls in 20201102-20211231
+
+# We have all what we want now!
+# comirnaty: 80431, janssen:3, spikevax: 12169, vaxzevria: 7102
+# Total N = 99705
+# nuvaxovid disappeared as dates are not in the range.
+
+# Remove unnecessary objects from work space
+rm(list = ls()[!ls() %in% c("vaccine_final", "finsote_vx", "finsote2018", 
+                            "finsote2020", "finsote2020_dates")])
+```
+
+### Exploratory data analysis of vaccine data
+
+```{r eda_vx}
+# Frequencies by vaccine_name
+knitr::kable(table(vaccine_final$vaccine_name), 
+             col.names = c("Vaccine name", "count"),
+             caption = "Count by Vaccine Name") %>% 
+  kable_classic(full_width = F, position = "left")
+
+# Check missing in vaccine_date
+knitr::kable(sum(is.na(vaccine_final$vaccine_date)), 
+             col.names = "Missings",
+             caption = "Missings in vaccine_date") %>% 
+  kable_classic(full_width = F, position = "left")
+# After using kaynti_alkoi_pvm to replace missing values in vaccine_date
+# No missings in vaccine_date
+
+# Plotting dates distribution
+vaccine_plot <- vaccine_final %>% 
+  mutate(vaccine_date = ymd(vaccine_date))
+ggplot(vaccine_plot, aes(x = vaccine_date)) + 
+  geom_histogram(binwidth = 50, colour = "white") 
+```
+
+## Data wrangling of baseline survey data
+
+```{r dw_finsote}
+# FINSOTE 2018 and 2020
+# Create data id FinSote 2018 and subset with key variables
+finsote2018_brief <- finsote2018 %>%
+  dplyr::select(gumm85id, consent_reg, maritalstatus, educ_years, ika2, 
+                involvement_attend_j, smoke_cur_never, smoke_altprod_snus, 
+                smoke_altprod_nic_ecig, smoke_altprod_non_nic_ecig, 
+                smoke_altprod_nic_substitute, smoke_altprod_recipe, smoke_altprod_other, 
+                sukupuoli, kieliryhma, fs_shp_koodi, rg_N1, w_analysis1, 
+                rg_stratum1, w_expansion1) %>%
+  rename(GUMM85ID = gumm85id) %>% 
+  rename(IKA2 = ika2) %>% 
+  rename(rg_N_suomi = rg_N1) %>%
+  rename(w_analysis_suomi = w_analysis1) %>%
+  rename(rg_stratum_suomi = rg_stratum1) %>%
+  rename(w_expansion_suomi = w_expansion1) %>%
+  mutate(dataid = 2018) %>%
+  mutate(age_cont = IKA2) %>%
+  mutate(educ_tertiles = ntile(educ_years, 3)) %>% 
+  filter(consent_reg == 1) #This excludes participants who didn't agree on the linkage
+
+# Appending datasets with different data types creates problems
+finsote2018_brief$sukupuoli <- as.factor(finsote2018_brief$sukupuoli)
+
+# Creating data id FinSote 2020 and subset with key variables
+finsote2020_brief <- finsote2020 %>%
+  dplyr::select(GUMM85ID, maritalstatus, educ_years, IKA2,
+                involvement_attend_j, smoke_cur_never, smoke_altprod_snus, 
+                smoke_altprod_nic_ecig, smoke_altprod_non_nic_ecig, 
+                smoke_altprod_nic_substitute, sukupuoli, kieliryhma, 
+                fs_shp_koodi, rg_N_suomi, w_analysis_suomi, 
+                rg_stratum_suomi, w_expansion_suomi) %>%
+  mutate(dataid = 2020) %>%
+  mutate(age_cont = IKA2) %>% 
+  mutate(educ_tertiles = ntile(educ_years, 3))
+
+# Appending datasets with different data types creates problems
+finsote2020_brief$sukupuoli <- as.factor(finsote2020_brief$sukupuoli)
+
+# Appending both datasets
+finsote1820 <- bind_rows(finsote2018_brief, finsote2020_brief)    # dplyr works much 
+# better than smartbind
+# print(miss_var_summary(finsote1820), n = 30)                    # now looks good
+
+finsote1820 <- finsote1820 %>%
+  mutate(mother_tongue = kieliryhma) %>%
+  mutate(sex = sukupuoli)
+
+# Checking class and levels of key variables
+class(finsote1820$smoke_cur_never)  #numeric
+class(finsote1820$maritalstatus)    #numeric
+class(finsote1820$educ_tertiles)    #integer
+class(finsote1820$sex)              #factor
+class(finsote1820$mother_tongue)    #numeric
+
+# Exposures. Tobacco use. Convert to factor, creating levels
+# Smoking
+finsote1820$smoking_status <- as.factor(finsote1820$smoke_cur_never)
+finsote1820$smoking_status <-  recode_factor(finsote1820$smoking_status, 
+                                             `1` = "daily smoker", 
+                                             `2` = "occasional", 
+                                             `3` = "former smoker", 
+                                             `4` = "never smoker")
+
+# Snus
+finsote1820$snus_status <- as.factor(finsote1820$smoke_altprod_snus)
+finsote1820$snus_status <-  recode_factor(finsote1820$snus_status, 
+                                          `1` = "daily user",
+                                          `2` = "occasional", 
+                                          `3` = "former user", 
+                                          `4` = "never user")
+
+# Confounders
+# Marital status. Convert to factor, create categorical levels
+finsote1820$maritalstatus_bin <- as.factor(finsote1820$maritalstatus)
+finsote1820$maritalstatus_bin <-  recode_factor(finsote1820$maritalstatus_bin,
+                                                `1` = "married or cohabiting",
+                                                `2` = "married or cohabiting", 
+                                                `3` = "separated, single or widowed", 
+                                                `4` = "separated, single or widowed",
+                                                `5` = "separated, single or widowed")
+
+# Mother tongue
+finsote1820$mother_tongue <- as.factor(finsote1820$mother_tongue)
+finsote1820$mother_tongue <-  recode_factor(finsote1820$mother_tongue, 
+                                            `1` = "finnish",
+                                            `2` = "swedish", 
+                                            `3` = "other", 
+                                            `4` = "other")
+
+# Sex. Needs no modification. 1==male and 2==female
+
+# Years of education. Convert to factor, creating levels
+finsote1820$educ_tertiles <- as.factor(finsote1820$educ_tertiles)
+finsote1820$educ_tertiles <-  recode_factor(finsote1820$educ_tertiles, 
+                                            `1` = "lower",
+                                            `2` = "medium", 
+                                            `3` = "high")
+
+# Social participation
+finsote1820$involvement_attend_j <- as.factor(finsote1820$involvement_attend_j)
+finsote1820$involvement_attend_j <- recode_factor(finsote1820$involvement_attend_j,
+                                                  `1` = "no participation", 
+                                                  `2` = "active",
+                                                  `3` = "occasional")
+
+# Other variables of tobacco and nicotine use for the multiple imputation
+# E-cig with nicotine 
+finsote1820$ecig_nic_status <- as.factor(finsote1820$smoke_altprod_nic_ecig)
+finsote1820$ecig_nic_status <-  recode_factor(finsote1820$ecig_nic_status,
+                                              `1` = "daily user", 
+                                              `2` = "occasional",
+                                              `3` = "former user", 
+                                              `4` = "never user")
+
+# E-cig without nicotine
+finsote1820$ecig_nonic_status <- as.factor(finsote1820$smoke_altprod_non_nic_ecig)
+finsote1820$ecig_nonic_status <-  recode_factor(finsote1820$ecig_nonic_status,
+                                                `1` = "daily user", 
+                                                `2` = "occasional",
+                                                `3` = "former user", 
+                                                `4` = "never user")
+
+# Nicotine replacement therapy 
+finsote1820$nrt_status <- as.factor(finsote1820$smoke_altprod_nic_substitute)
+finsote1820$nrt_status <-  recode_factor(finsote1820$nrt_status, 
+                                         `1` = "daily user",
+                                         `2` = "occasional", 
+                                         `3` = "former user", 
+                                         `4` = "never user")
+# Convert complex survey variables
+finsote1820$rg_N_suomi <- as.numeric(finsote1820$rg_N_suomi)
+finsote1820$rg_stratum_suomi <- as.numeric(finsote1820$rg_stratum_suomi)
+finsote1820$w_analysis_suomi <- as.numeric(finsote1820$w_analysis_suomi)
+finsote1820$w_expansion_suomi <- as.numeric(finsote1820$w_expansion_suomi)
+
+# Check variable types
+class(finsote1820$maritalstatus_bin) #factor
+class(finsote1820$sex) #factor
+class(finsote1820$rg_N_suomi) #numeric
+
+# Dataset combining FinSote 2018 and 2020 ready
+
+# Solving data type incompatibilities before appending
+finsote1820$involvement_attend_j <- as.factor(finsote1820$involvement_attend_j)
+finsote1820$educ_tertiles <- as.factor(finsote1820$educ_tertiles)
+
+# Communicable Disease Registry
+# Extract disease registry from finsote2018, finsote2020
+ttr3 <- bind_rows(finsote2018 %>% 
+                    dplyr::select(gumm85id, sampling_date, covid) %>% 
+                    subset(covid == 1) %>% 
+                    rename(GUMM85ID = gumm85id),
+                  finsote2020 %>% 
+                    dplyr::select(GUMM85ID, sampling_date, covid) %>% 
+                    subset(covid == 1)) 
+# In total, 10 cases have missing in sampling date.
+# NAs are defined as character. Use is.na() not work.
+sum(ttr3$sampling_date == "NA")
+# And we can't do anything except deletion.
+# Limit
+ttr3 <- ttr3 %>% 
+  subset(!sampling_date == "NA" & sampling_date <= "20211231") 
+```
+
+### Exploratory data analysis of survey data
+
+```{r eda_surveydata}
+# Missingness
+miss_var_summary(finsote1820) %>%
+  print(n = length(names(finsote1820)))
+```
+
+## Data wrangling of outcome and mediator varibles
+
+We created three outcomes variables related to vaccine uptake, corresponding to the pre-registered protocol:
+
+-   have at least 1 doss (event_1dose),
+-   have at least 2 doses (event_2doses),
+-   have at least 3 doses (event_3doses),
+
+Two outcome variables related to dose-spacing (in days):
+
+-   interval between 1st and 2nd dose (event_20weeks12),
+-   interval between 2nd and 3rd dose (event_7months23),
+
+And ten outcome variables related to simulation study:
+
+-   event_sim1_1dose, event_sim2_1dose
+-   event_sim1_2doses, event_sim2_2doses
+-   event_sim1_3doses, event_sim2_3doses
+-   event_sim1_20weeks12, event_sim2_20weeks12
+-   event_sim1_7months23, event_sim2_7months23
+
+There are two simulation studies: 1) All participants who got COVID at C1 get vaccinated; 2) All participants who got COVID at C1 not get vaccinated.
+
+Created case variable (when the participant infected with COVID-19):
+
+-   case_C1: those who with an incident COVID-19 case before the first dose and if whose who have not received a COVID-19 vaccine, we would consider C1 was the period between the start of the pandemic until eligibility for the first dose,
+-   case_C2: those who with an incident COVID-19 case after first dose,
+-   case_C3: those who with an incident COVID-19 case after second dose.
+
+```{r dw_outcome&mediator, message=FALSE}
+# Create event variable
+# vaccine data - change vaccine_date and arrange by id and vaccine_date
+Janssen <- vaccine_final %>% 
+  mutate(vaccine_date = ymd(vaccine_date)) %>% 
+  subset(vaccine_name == "janssen") %>% 
+  arrange(gumm85id, vaccine_date) 
+# Duplicate janssen participate as 1 janssen = 2 others
+vaccinecc <- vaccine_final %>% 
+  mutate(vaccine_date = ymd(vaccine_date)) %>% 
+  bind_rows(Janssen) %>% 
+  arrange(gumm85id, vaccine_date) 
+
+# Change gumm85id to upper case
+names(vaccinecc)[names(vaccinecc) == "gumm85id"] <- "GUMM85ID"
+
+# Creates a data frame for confirmed cases
+confirmed_cases <- data.frame(vaccine_name = "COVID", 
+                              vaccine_date = ttr3$sampling_date, 
+                              GUMM85ID = ttr3$GUMM85ID)
+
+# Combines confirmed_cases with vaccine_date
+# confirmed_timepoints_1: Vaccinated
+confirmed_timepoints_1 <- plyr::rbind.fill(confirmed_cases, vaccinecc) %>% 
+  arrange(GUMM85ID, vaccine_date) %>% 
+  group_by(GUMM85ID) %>%  
+  filter(any(vaccine_name == "COVID")) %>% 
+  mutate(count = n()) %>% 
+  subset(vaccine_date >= "2020-12-27" & count > 1) %>%   # Vaccination starts 
+  reframe(
+    case_C1 = case_when(count > 1 & first(vaccine_name) == "COVID" ~ 1,
+                        TRUE ~ 0),
+    case_C2 = case_when(count >= 2 & (nth(vaccine_name, 2) == "COVID") ~ 1,
+                        TRUE ~ 0),
+    case_C3 = case_when(count >= 3 & (nth(vaccine_name, 3) == "COVID") ~ 1,
+                        TRUE ~ 0)) %>% 
+  distinct()
+
+# confirmed_timepoints_2: Not vaccinated
+confirmed_timepoints_2a <- plyr::rbind.fill(confirmed_cases, vaccinecc) %>% 
+  arrange(GUMM85ID, vaccine_date) %>% 
+  group_by(GUMM85ID) %>%  
+  filter(any(vaccine_name == "COVID")) %>% 
+  mutate(count = n()) %>% 
+  subset(vaccine_date >= "2020-12-27" & count == 1) %>% 
+  distinct()
+
+DatebyAge <- bind_rows(
+  finsote2018 %>% 
+    subset(gumm85id %in% confirmed_timepoints_2a$GUMM85ID, 
+           select = c("gumm85id", "ika2")) %>% 
+    `colnames<-`(c("GUMM85ID", "IKA2")) %>% 
+    mutate(IKA2 = IKA2 + 4),
+  finsote2020 %>% 
+    subset(GUMM85ID %in% confirmed_timepoints_2a$GUMM85ID, 
+           select = c("GUMM85ID", "IKA2"))) %>% 
+  mutate(date = case_when(IKA2 %in% 16:24 ~ "2021-06-21",
+                          IKA2 %in% 25:29 ~ "2021-06-14",
+                          IKA2 %in% 30:34 ~ "2021-06-07",
+                          IKA2 %in% 35:39 ~ "2021-05-31",
+                          IKA2 %in% 40:44 ~ "2021-05-18",
+                          IKA2 %in% 45:49 ~ "2021-05-10",
+                          IKA2 %in% 50:54 ~ "2021-05-03",
+                          IKA2 %in% 55:59 ~ "2021-04-27",
+                          IKA2 %in% 60:64 ~ "2021-04-19",
+                          IKA2 %in% 65:69 ~ "2021-03-31",
+                          IKA2 %in% 70:74 ~ "2021-03-09",
+                          IKA2 %in% 75:79 ~ "2021-02-24",
+                          IKA2 %in% 80:84 ~ "2021-02-09",
+                          IKA2 %in% 85:99 ~ "2021-02-01"
+  )) 
+
+# Combine confirmed_timepoints_2 and DatebyAge
+confirmed_timepoints_2 <- confirmed_timepoints_2a %>% 
+  right_join(DatebyAge, by = "GUMM85ID") %>% 
+  rowwise() %>% 
+  reframe(case_C1 = ifelse(vaccine_date <= date, 1, 0))
+
+# Combine confirmed_timepoints_1 and confirmed_timepoints_2
+confirmed_timepoints <- plyr::rbind.fill(confirmed_timepoints_1, 
+                                         confirmed_timepoints_2) %>% 
+  replace_na(list(case_C2 = 0,
+                  case_C3 = 0))
+
+# Merge confirmed_timepoints with finsote1820 data
+finsote <- left_join(finsote1820, confirmed_timepoints, by = "GUMM85ID") 
+
+# Have at least 1 dose
+dose1 <- vaccinecc %>% 
+  group_by(GUMM85ID) %>% 
+  mutate(count = n(),
+         diff = difftime(vaccine_date, first(vaccine_date), units = "days"),
+         diff_days = as.numeric(diff, units = "days"), 
+         dose_nro = row_number(),
+         count = n(), 
+         vaccine1 = case_when(count >= 1 ~ 1,
+                              TRUE ~ 0)) 
+
+# Have at least 2 doses
+dose2 <- vaccinecc %>% 
+  group_by(GUMM85ID) %>% 
+  mutate(count = n(),
+         diff = difftime(vaccine_date, first(vaccine_date), units = "days"),
+         diff_days = as.numeric(diff, units = "days"), 
+         dose_nro = row_number(),
+         count = n(), 
+         vaccine2 = case_when(count >= 2 ~ 1,
+                              TRUE ~ 0)) 
+
+# Have 3 doses
+dose3 <- vaccinecc %>% 
+  group_by(GUMM85ID) %>% 
+  mutate(count = n(),
+         diff = difftime(vaccine_date, first(vaccine_date), units = "days"),
+         diff_days = as.numeric(diff, units = "days"), 
+         dose_nro = row_number(),
+         count = n(), 
+         vaccine3 = case_when(count >= 3 ~ 1,
+                              TRUE ~ 0)) 
+
+# vaccine1 in dose1, vaccine2 in dose2, vaccine3 in dose3 are the event variables.
+dose1.vac <- dose1 %>% 
+  reframe(event_1dose = vaccine1) %>% 
+  distinct()
+# In total 39674 have at least 1 vaccine
+
+dose2.vac <- dose2 %>% 
+  reframe(event_2doses = vaccine2) %>% 
+  distinct()
+# 38793 have at least 2 vaccines
+# table(dose2.vac$event_2doses)
+
+dose3.vac <- dose3 %>% 
+  reframe(event_3doses = vaccine3) %>% 
+  distinct()
+# only 20728 have at least 3 vaccines
+# table(dose3.vac$event_3doses)
+
+# Combine event_1dose, event_2doses & event_3doses
+dose_list <- list(dose1.vac, dose2.vac, dose3.vac)
+dose <- Reduce(function(x, y) merge(x, y, all = TRUE), 
+               dose_list, 
+               accumulate = FALSE)
+
+# Combine finsote data with dose
+#  and if event_2dose is missing in the register, 
+#  then it should 0, which means they have not taken at least 2 doses of vaccine
+finsote_dose <- left_join(finsote, dose, by = "GUMM85ID") %>% 
+  # define event variable for simulation study
+  mutate(event_sim1_1dose = case_when(case_C1 == 1 ~ 1,
+                                      TRUE ~ event_1dose),
+         event_sim2_1dose = case_when(case_C1 == 1 ~ 0, 
+                                      TRUE ~ event_1dose),
+         event_sim1_2doses = case_when(case_C1 == 1 ~ 1,
+                                       TRUE ~ event_2doses),
+         event_sim2_2doses = case_when(case_C1 == 1 ~ 0, 
+                                       TRUE ~ event_2doses),
+         event_sim1_3doses = case_when(case_C1 == 1 ~ 1,
+                                       TRUE ~ event_3doses),
+         event_sim2_3doses = case_when(case_C1 == 1 ~ 0, 
+                                       TRUE ~ event_3doses)) %>% 
+  # replace missing values by 0
+  replace_na(list(case_C1 = 0,
+                  case_C2 = 0,
+                  case_C3 = 0, 
+                  event_1dose = 0,
+                  event_2doses = 0, 
+                  event_3doses = 0,
+                  event_sim1_1dose = 0,
+                  event_sim2_1dose = 0,
+                  event_sim1_2doses = 0,
+                  event_sim2_2doses = 0,
+                  event_sim1_3doses = 0,
+                  event_sim2_3doses = 0))
+# event variables defined!
+
+# Define vaccine type
+# vaccination records can be found in does1.vac, dose2.vac and dose3.vac
+# Based on GUMM85IDs, we can find out something in vaccinecc
+# Vaccine type for at least 1 dose
+vaccinecc %>% 
+  subset(GUMM85ID %in% dose1.vac$GUMM85ID) %>% 
+  mutate(type1vac = case_when(first(vaccine_name) == "comirnaty" ~ "Pfizer",
+                              first(vaccine_name) == "spikevax" ~ "Moderna",
+                              first(vaccine_name) == "vaxzevria" ~ "Astra Zeneca")) %>% 
+  subset(select = c("GUMM85ID", "type1vac")) %>% 
+  reframe(type1vac = unique(type1vac),
+          GUMM85ID = unique(GUMM85ID)) -> type.1vac
+
+# Vaccine type for at least 2 doses
+vaccinecc %>% 
+  subset(GUMM85ID %in% (dose2.vac %>% subset(event_2doses == 1))$GUMM85ID) %>% 
+  mutate(type2vac = case_when(vaccine_name == "comirnaty" ~ "Pfizer",
+                              vaccine_name == "spikevax" ~ "Moderna",
+                              vaccine_name == "vaxzevria" ~ "Astra Zeneca")) %>% 
+  group_by(GUMM85ID) %>% 
+  mutate(type2vac = case_when(
+    first(type2vac) %in% c("Pfizer", "Moderna") &
+      nth(type2vac, 2) %in% c("Pfizer", "Moderna") ~ "both mRNA",
+    first(type2vac) %in% c("Astra Zeneca") &
+      nth(type2vac, 2) %in% c("Pfizer", "Moderna") ~ "Astra Zeneca + mRNA",
+    first(type2vac) %in% c("Astra Zeneca") &
+      nth(type2vac, 2) %in% c("Astra Zeneca") ~ "both Astra Zeneca"
+  )) %>% 
+  reframe(type2vac = unique(type2vac),
+          GUMM85ID = unique(GUMM85ID)) -> type.2vac
+
+# Vaccine type for at least 3 doses
+vaccinecc %>% 
+  subset(GUMM85ID %in% (dose3.vac %>% subset(event_3doses == 1))$GUMM85ID) %>% 
+  mutate(type3vac = case_when(vaccine_name == "comirnaty" ~ "Pfizer",
+                              vaccine_name == "spikevax" ~ "Moderna",
+                              vaccine_name == "vaxzevria" ~ "Astra Zeneca")) %>% 
+  group_by(GUMM85ID) %>% 
+  mutate(type3vac = case_when(
+    first(type3vac) %in% c("Pfizer", "Moderna") &
+      nth(type3vac, 2) %in% c("Pfizer", "Moderna") &
+      nth(type3vac, 3) %in% c("Pfizer", "Moderna") ~ "3 * mRNA",
+    first(type3vac) %in% c("Astra Zeneca") &
+      nth(type3vac, 2) %in% c("Pfizer", "Moderna") & 
+      nth(type3vac, 3) %in% c("Pfizer", "Moderna") ~ "Astra Zeneca + 2 * mRNA",
+    first(type3vac) %in% c("Astra Zeneca") &
+      nth(type3vac, 2) %in% c("Astra Zeneca") &
+      nth(type3vac, 3) %in% c("Pfizer", "Moderna") ~ "2 * Astra Zeneca + mRNA",
+    first(type3vac) %in% c("Pfizer", "Moderna") &
+      nth(type3vac, 2) %in% c("Astra Zeneca") &
+      nth(type3vac, 3) %in% c("Pfizer", "Moderna") ~ "Astra Zeneca + 2 * mRNA"
+  )) %>% 
+  reframe(type3vac = unique(type3vac),
+          GUMM85ID = unique(GUMM85ID)) -> type.3vac
+
+# Combine type.1vac, type.2vac & type.3vac
+type_list <- list(type.1vac, type.2vac, type.3vac)
+type <- Reduce(function(x, y) merge(x, y, all = TRUE), 
+               type_list, 
+               accumulate = FALSE)
+
+# Combine finsote_dose data with type
+finsote_type <- left_join(finsote_dose, type, by = "GUMM85ID")
+
+# Count by event variables and survey year (dataid)
+listVars <- c("event_1dose", "event_2doses", "event_3doses")
+catVars <- c("event_1dose", "event_2doses", "event_3doses",
+             "event_sim1_1dose", "event_sim2_1dose",
+             "event_sim1_2doses", "event_sim2_2doses",
+             "event_sim1_3doses", "event_sim2_3doses")
+table1 <- CreateTableOne(listVars, 
+                         strata = c("dataid"), 
+                         factor = catVars,
+                         test = FALSE, 
+                         data = finsote_dose)
+tab1 <- print(table1, 
+              printToggle = FALSE, 
+              nospaces = TRUE,
+              contDigits = 1)
+kable(tab1, 
+      format.args = list(digits = 1,
+                         nsmall = 1, 
+                         format))
+
+# Count by mediator variables
+tbl_case <- data.frame(case = c("before 1st dose (C1)", "After 1st and before 2nd (C2)"),
+                       bind_rows(table(finsote_dose$case_C1), table(finsote_dose$case_C2)))
+knitr::kable(tbl_case, 
+             col.names = c("case", "0", "1"),
+             caption = "Count by case") %>% 
+  kable_classic(full_width = F, position = "left")
+
+# By dataid
+listVars <- c("case_C1", "case_C2")
+catVars <- c("case_C1", "case_C2")
+table_dataid <- CreateTableOne(listVars, 
+                               strata = c("dataid"), 
+                               factor = catVars,
+                               test = FALSE, 
+                               data = finsote_dose)
+tab_dataid <- print(table_dataid, 
+                    printToggle = FALSE, 
+                    nospaces = TRUE, 
+                    contDigits = 1)
+kable(tab_dataid, 
+      format.args = list(digits = 1, 
+                         nsmall = 1, 
+                         format))
+```
+
+## Final combinations and re-arrangements
+
+```{r combine&relevel}
+# Create event variables - interval spacing.
+# Interval spacing between 1st and 2nd dose
+event_20weeks12 <- dose2 %>% 
+  group_by(GUMM85ID) %>% 
+  subset(dose_nro == 2) %>% 
+  reframe(event_20weeks12 = case_when(diff_days >= 140 ~ 1,
+                                      TRUE ~ 0))
+
+# Interval spacing between 2nd and 3rd dose
+event_7months23 <- dose2 %>% 
+  group_by(GUMM85ID) %>% 
+  subset(count >= 3) %>% 
+  reframe(diff_days = difftime(nth(vaccine_date, 3), nth(vaccine_date, 2), units = "days"),
+          diff_days = as.numeric(diff_days)) %>% 
+  distinct() %>% 
+  reframe(GUMM85ID = GUMM85ID,
+          event_7months23 = case_when(diff_days >= 210 ~ 1,
+                                      TRUE ~ 0))
+
+# Combine event_1dose, event_2doses & event_3doses
+evnt_list <- list(event_20weeks12, event_7months23)
+evnt <- Reduce(function(x, y) merge(x, y, all = TRUE), evnt_list, accumulate = FALSE)
+
+# Combine finsote data with evnt
+finsote_evnt <- left_join(finsote_type, evnt, by = "GUMM85ID") %>% 
+  mutate(event_sim1_20weeks12 = case_when(case_C1 == 1 ~ 1,
+                                          TRUE ~ event_20weeks12),
+         event_sim2_20weeks12 = case_when(case_C1 == 1 ~ 0,
+                                          TRUE ~ event_20weeks12),
+         event_sim1_7months23 = case_when(case_C1 == 1 ~ 1,
+                                          TRUE ~ event_7months23),
+         event_sim2_7months23 = case_when(case_C1 == 1 ~ 0,
+                                          TRUE ~ event_7months23)
+  ) %>% 
+  replace_na(list(event_20weeks12 = 0,
+                  event_7months23 = 0,
+                  event_sim1_20weeks12 = 0,
+                  event_sim1_7months23 = 0, 
+                  event_sim2_20weeks12 = 0,
+                  event_sim2_7months23 = 0))
+
+# Creates a more parsimonious dataset
+finsotecc <- finsote_evnt %>% 
+  dplyr::select(GUMM85ID, rg_N_suomi, w_analysis_suomi, rg_stratum_suomi, dataid, 
+                fs_shp_koodi, smoking_status, snus_status, ecig_nic_status, 
+                ecig_nonic_status, nrt_status, educ_tertiles, maritalstatus_bin, 
+                mother_tongue, involvement_attend_j, case_C1, case_C2, event_1dose, 
+                event_2doses, event_3doses, age_cont, sex, event_20weeks12, case_C3,
+                event_7months23, event_sim1_1dose, event_sim2_1dose, event_sim1_2doses, 
+                event_sim2_2doses, event_sim1_3doses, event_sim2_3doses,
+                event_sim1_20weeks12, event_sim2_20weeks12, event_sim1_7months23,
+                event_sim2_7months23, type1vac, type2vac, type3vac) 
+# n = 42935
+
+# Combines daily and occasional users
+# table(finsotecc$snus_status, useNA = "ifany")
+finsotecc$snus_status <- recode_factor(finsotecc$snus_status, 
+                                       "daily user" = "current user")
+finsotecc$snus_status <- recode_factor(finsotecc$snus_status, 
+                                       "occasional" = "current user")
+
+finsotecc$ecig_nic_status <- recode_factor(finsotecc$ecig_nic_status, 
+                                           "daily user" = "current user")
+finsotecc$ecig_nic_status <- recode_factor(finsotecc$ecig_nic_status, 
+                                           "occasional" = "current user")
+
+finsotecc$ecig_nonic_status <- recode_factor(finsotecc$ecig_nonic_status, 
+                                             "daily user" = "current user")
+finsotecc$ecig_nonic_status <- recode_factor(finsotecc$ecig_nonic_status, 
+                                             "occasional" = "current user")
+
+finsotecc$nrt_status <- recode_factor(finsotecc$nrt_status,
+                                      "daily user" = "current user")
+finsotecc$nrt_status <- recode_factor(finsotecc$nrt_status,
+                                      "occasional" = "current user")
+
+# Create tobacco variable 
+finsotecc %>%  
+  mutate(tobacco_use = case_when(
+    # Dual use
+    # daily smoker & current user
+    smoking_status %in% c("daily smoker") & 
+      snus_status %in% c("current user") ~ "Dual use",
+    # occasional & current user
+    smoking_status %in% c("occasional") & 
+      snus_status %in% c("current user") ~ "Dual use",
+    
+    # Only tobacco use 
+    # daily smoker and former user
+    smoking_status %in% c("daily smoker") & 
+      snus_status %in% c("former user") ~ "only tabacco use",
+    # daily smoker and never user
+    smoking_status %in% c("daily smoker") & 
+      snus_status %in% c("never user") ~ "only tabacco use",
+    # daily and NA
+    smoking_status %in% c("daily smoker") & 
+      is.na(snus_status) ~ "only tabacco use",
+    # occasional and former user
+    smoking_status %in% c("occasional") & 
+      snus_status %in% c("former user") ~ "only tabacco use",
+    # occasional and never user
+    smoking_status %in% c("occasinal") & 
+      snus_status %in% c("never user") ~ "only tabacco use",
+    # occasional and NA
+    smoking_status %in% c("occassional") & 
+      is.na(snus_status) ~ "only tabacco use",
+    
+    # Only snus user
+    # former smoker and current user
+    smoking_status %in% c("former smoker") & 
+      snus_status %in% c("current user") ~ "only snus use",
+    # never smoker and current user
+    smoking_status %in% c("never smoker") & 
+      snus_status %in% c("current user") ~ "only snus use",
+    # NA and current smoker
+    is.na(smoking_status) & 
+      snus_status %in% c("current user") ~ "only snus use",
+    
+    # Former tobacco use
+    # former smoker and former user
+    smoking_status %in% c("former smoker") & 
+      snus_status %in% c("former user") ~ "former tobacco use",
+    # former smoker and never user
+    smoking_status %in% c("former smoker") & 
+      snus_status %in% c("never user") ~ "former tobacco use",
+    # former smoker and NA
+    smoking_status %in% c("former smoker") & 
+      is.na(snus_status) ~ "former tobacco use",
+    # never smoker and former user 
+    smoking_status %in% c("never smoker") & 
+      snus_status %in% c("former user") ~ "former tobacco use",
+    # NA and former user 
+    is.na(smoking_status) & 
+      snus_status %in% c("former user") ~ "former tobacco use",
+    
+    # never tobacco use
+    # never smoker and never user
+    smoking_status %in% c("never smoker") & 
+      snus_status %in% c("never user") ~ "never tobacco use",
+    # never smoker and NA
+    smoking_status %in% c("never smoker") & 
+      is.na(snus_status) ~ "never tobacco use",
+    # NA and never user
+    is.na(smoking_status) & 
+      snus_status %in% c("never user") ~ "never tobacco use",
+    
+    # NA and NA
+    TRUE ~ NA_character_) %>% 
+      as.factor()
+  ) -> finsotecc
+
+# Reference levels
+finsotecc <- within(finsotecc, 
+                    smoking_status <- relevel(smoking_status, ref = "never smoker"))
+finsotecc <- within(finsotecc, 
+                    snus_status <- relevel(snus_status, ref = 'never user'))
+finsotecc <- within(finsotecc, 
+                    ecig_nic_status <- relevel(ecig_nic_status, ref = 'never user'))
+finsotecc <- within(finsotecc, 
+                    ecig_nonic_status <- relevel(ecig_nonic_status, ref = 'never user'))
+finsotecc <- within(finsotecc, 
+                    nrt_status <- relevel(nrt_status, ref = 'never user'))
+finsotecc <- within(finsotecc, 
+                    tobacco_use <- relevel(tobacco_use, ref = 'never tobacco use'))
+
+# Convert character to factor
+finsotecc$fs_shp_koodi <- as.factor(finsotecc$fs_shp_koodi)
+finsotecc$type1vac <- as.factor(finsotecc$type1vac)
+finsotecc$type2vac <- as.factor(finsotecc$type2vac)
+finsotecc$type3vac <- as.factor(finsotecc$type3vac)
+```
+
+# Multiple imputation
+
+We imputed the final dataset (finsotecc), which contains variables with mssing data in confounders and exposures. There are no missing data for some variables such as sex, age and mother tongue nor for any of the outcomes. We also used variables that correlate with missingness, such as the exposure to other tobacco products. We used multiple imputation with chained equations. The missing data assumption is missing at random (MAR).
+
+We did not specify an imputation method. The package mice uses predictive mean matching as the default method. We carried out 15 imputations which we then pooled to obtain multiply imputed values. These values take the complex survey sampling into account.
+Specified formulas when imputing. Supposed, for example, smoking_status is predicted by dataid, fs_shp_koodi, age_cont, sex, snus_status, ecig_nic_status, ecig_nonic_status, nrt_status, educ_tertiles, maritalstatus_bin, mother_tongue, involvement_attend_j. Others, are imputed with the same logic. ecig_nic_status, ecig_nonic_status & nrt_status not included in the analysis, but use them as auxiliary information to help imputation. That is, the model is like `smoking_status ~ dataid + fs_shp_koodi + age_cont + sex + snus_status + ecig_nic_status + ecig_nonic_status + nrt_status + educ_tertiles + maritalstatus_bin + mother_tongue + involvement_attend_j`.
+
+If not specified formulas gives the results in the slides. [Tobacco and COVID-19 vaccination](https://docs.google.com/presentation/d/1X6_8nQ879BX5X6wheXiKvkm9hQg36BMB/edit#slide=id.g166d1f6a10c_0_429)
+
+The convergence plot shows that the multiple imputation process for FinSote data was successful - there is little trend and the streams mingle well.
+
+```{r MI, message=FALSE}
+# Multiple imputation
+# By default, mice use Polynomial Regression for multilevel variable
+#   and logreg for binary variable
+# Setting up survey design (weights, strata and FPC)
+finsotecc_imp <- mice(
+  subset(finsotecc,
+         select = c("dataid", "fs_shp_koodi", "smoking_status", "snus_status",
+                    "ecig_nic_status", "ecig_nonic_status", "nrt_status",
+                    "educ_tertiles", "maritalstatus_bin", "mother_tongue", 
+                    "involvement_attend_j", "age_cont", "sex", "tobacco_use", 
+                    "type1vac", "type2vac", "type3vac")),
+  m = 15, 
+  seed = 99, 
+  printFlag = F)
+
+# Check convergence
+plot(finsotecc_imp, 
+     c("smoking_status", "snus_status"), 
+     main = "Convergence of Imputed data")
+
+#
+finsotecc_imp <- cbind(
+  finsotecc_imp, 
+  subset(finsotecc,
+         select = c(
+           "rg_N_suomi", "w_analysis_suomi", "rg_stratum_suomi", "GUMM85ID", 
+           "case_C1", "case_C2", "event_1dose", "event_2doses", "event_3doses", 
+           "event_20weeks12", "event_7months23", "event_sim1_1dose", "case_C3",
+           "event_sim2_1dose", "event_sim1_2doses", "event_sim2_2doses", 
+           "event_sim1_3doses", "event_sim2_3doses", "event_sim1_20weeks12", 
+           "event_sim2_20weeks12", "event_sim1_7months23", "event_sim2_7months23")
+  )
+)
+```
+
+# Tables
+
+We present descriptive tables of baseline characteristics taking the complex survey design into account.
+
+## Non-imputed
+
+```{r tbls_nonimputed}
+# Use non-imputed finsotecc
+# Make survey design object
+des_tbl <- svydesign(id = ~1, 
+                     fpc = ~rg_N_suomi, 
+                     weights = ~w_analysis_suomi, 
+                     strata = ~rg_stratum_suomi, 
+                     data = finsotecc)
+
+# Table 1
+knitr::kable(
+  table(finsotecc$event_2doses, finsotecc$smoking_status, exclude = NULL), 
+  caption = "Count by event_2doses and smoking_status") %>% 
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(
+  table(finsotecc$smoking_status, exclude = NULL), 
+  caption = "Count by smoking_status",
+  col.names = c("smoking_status", "count")) %>% 
+  kable_classic(full_width = F, position = "left")
+
+# Count for Table 1
+listVars <- c("event_1dose", "event_2doses", "event_3doses", "event_20weeks12", 
+              "event_7months23","case_C1", "case_C2", "case_C3",  "sex", 
+              "age_cont", "maritalstatus_bin", "educ_tertiles", "mother_tongue",
+              "involvement_attend_j", "event_sim1_1dose", "event_sim2_1dose", 
+              "event_sim1_2doses", "event_sim2_2doses", "event_sim1_3doses", 
+              "event_sim2_3doses", "event_sim1_20weeks12", 
+              "event_sim2_20weeks12", "event_sim1_7months23",
+              "event_sim2_7months23")
+catVars <- c("event_1dose", "event_2doses", "event_3doses", "event_20weeks12", 
+             "event_7months23", "case_C1", "case_C2", "case_C3", "sex", 
+             "maritalstatus_bin", "educ_tertiles", "mother_tongue", 
+             "involvement_attend_j", "event_sim1_1dose", "event_sim2_1dose", 
+             "event_sim1_2doses", "event_sim2_2doses", "event_sim1_3doses", 
+             "event_sim2_3doses", "event_sim1_20weeks12", 
+             "event_sim2_20weeks12", "event_sim1_7months23",
+             "event_sim2_7months23")
+
+table1 <- svyCreateTableOne(listVars, 
+                            strata = c("smoking_status"), 
+                            factor = catVars,
+                            test = FALSE, 
+                            data = des_tbl,
+                            addOverall = T)
+
+tab1 <- print(table1, 
+              printToggle = FALSE, 
+              nospaces = TRUE, 
+              format = "p", 
+              contDigits = 1)
+
+knitr::kable(tab1, 
+             format.args = list(digits = 1, nsmall = 1, format), 
+             caption = "Summary table: smoking status (Non-imputed)") %>% 
+  kable_classic(full_width = F, position = "left")
+
+# Table S2 for snus
+knitr::kable(
+  table(finsotecc$event_2doses, finsotecc$snus_status, exclude = NULL), 
+  caption = "Count by event_2doses and snus_status") %>% 
+  kable_classic(full_width = F, position = "left")
+
+knitr::kable(
+  table(finsotecc$snus_status, exclude = NULL), 
+  caption = "Count by snus_status",
+  col.names = c("snus_status", "count")) %>% 
+  kable_classic(full_width = F, position = "left")
+
+table2 <- svyCreateTableOne(listVars, 
+                            strata = c("snus_status"), 
+                            factor = catVars, 
+                            test = FALSE, 
+                            data = des_tbl, 
+                            addOverall = T)
+tab2 <- print(table2, 
+              printToggle = FALSE, 
+              nospaces = TRUE, 
+              format = "p", 
+              contDigits = 1)
+knitr::kable(tab2, 
+             format.args = list(digits = 1, nsmall = 1, format), 
+             caption = "Summary table: snus status (Non-imputed)") %>% 
+  kable_classic(full_width = F, position = "left")
+
+# Table 3: Tobacco use
+table3 <- svyCreateTableOne(listVars, 
+                            strata = c("tobacco_use"), 
+                            factor = catVars, 
+                            test = FALSE, 
+                            data = des_tbl, 
+                            addOverall = T)
+tab3 <- print(table3, 
+              printToggle = FALSE, 
+              nospaces = TRUE, 
+              format = "p", 
+              contDigits = 1)
+knitr::kable(tab3, 
+             format.args = list(digits = 1, nsmall = 1, format), 
+             caption = "Summary table: Tobacco use (Non-imputed)") %>% 
+  kable_classic(full_width = F, position = "left")
+```
+
+## Imputed
+
+```{r tbls_imputed}
+# Use imputed finsotecc
+# Make survey design object
+imp_list <- imputationList(lapply(1:finsotecc_imp$m, 
+                                  function(n) mice::complete(finsotecc_imp, action = n)))
+des_final <- svydesign(id = ~1, 
+                       fpc = ~rg_N_suomi, 
+                       weights = ~w_analysis_suomi, 
+                       strata = ~rg_stratum_suomi, 
+                       data = imp_list,
+                       nest = T)
+
+# Table 1
+table1 <- svyCreateTableOne(listVars, 
+                            strata = c("smoking_status"), 
+                            factor = catVars,
+                            test = FALSE, 
+                            data = des_final$designs[[1]])
+tab1 <- print(table1, printToggle = FALSE, nospaces = TRUE, format = "p", contDigits = 1)
+knitr::kable(tab1, format.args = list(digits = 1, nsmall = 1, format), 
+             caption = "Summary table: smoking status (Imputed)") %>% 
+  kable_classic(full_width = F, position = "left")
+
+# Table S2 for snus
+table2 <- svyCreateTableOne(listVars, 
+                            strata = c("snus_status"), 
+                            factor = catVars, 
+                            test = FALSE, 
+                            data = subset(des_final$designs[[1]], dataid == 2020))
+tab2 <- print(table2, printToggle = FALSE, nospaces = TRUE, format = "p", contDigits = 1)
+knitr::kable(tab2, format.args = list(digits = 1, nsmall = 1, format), 
+             caption = "Summary table: snus status (Imputed)") %>% 
+  kable_classic(full_width = F, position = "left")
+
+# Table S3 for tobacco use
+table3 <- svyCreateTableOne(listVars, 
+                            strata = c("tobacco_use"), 
+                            factor = catVars, 
+                            test = FALSE, 
+                            data = subset(des_final$designs[[1]], dataid == 2020))
+tab3 <- print(table3, printToggle = FALSE, nospaces = TRUE, format = "p", contDigits = 1)
+knitr::kable(tab3, format.args = list(digits = 1, nsmall = 1, format), 
+             caption = "Summary table: tobacco use (Imputed)") %>% 
+  kable_classic(full_width = F, position = "left")
+```
+
+## Information about vaccine type
+
+```{r vaccinetype}
+table(finsotecc$type1vac, exclude = NULL) %>% 
+  kbl(caption = "Vaccine type (1 dose)") %>% 
+  kable_classic(full_width = F, position = "left") 
+
+table(finsotecc$type2vac, exclude = NULL) %>% 
+  kbl(caption = "Vaccine type (2 doses)") %>% 
+  kable_classic(full_width = F, position = "left") 
+
+table(finsotecc$type3vac, exclude = NULL) %>% 
+  kbl(caption = "Vaccine type (3 doses)") %>% 
+  kable_classic(full_width = F, position = "left") 
+```
+
+
+# Save
+
+```{r save}
+save(list = c("des_final", "finsotecc", "finsote2020_dates", 
+              "vaccinecc", "finsote_evnt", "ttr3",
+              "dose2", "dose1", "dose3"), file = "TobriskCov_Data_02102023.RData")
+```
+
+# End of part I

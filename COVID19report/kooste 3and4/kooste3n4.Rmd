@@ -1,0 +1,1023 @@
+---
+title: ' '
+params:
+  ESH_file: /home/zzhh/mnt/ZZHH/_Desktop/Tasks/Koronaraportointi/covid_esh_tilannekuva_2022-09-08.xls
+  PTH_file: /home/zzhh/mnt/ZZHH/_Desktop/Tasks/Koronaraportointi/covid_pth_tilannekuva_2022-09-08.xls
+  SOS_file: /home/zzhh/mnt/ZZHH/_Desktop/Tasks/Koronaraportointi/covid_sos_tilannekuva_2022-09-08.xls
+output:
+  word_document:
+    reference_docx: /home/zzhh/Desktop/koronaraportointi/kooste-template.docx 
+---
+
+```{r include=FALSE}
+library("xlsx")
+library("officer")
+library("flextable")
+library("tidyverse")
+library("lubridate")
+library("rowr")
+
+# Define a helper function
+empty_as_na <- function(x){
+    if("factor" %in% class(x)) x <- as.character(x) ## since ifelse wont work with factors
+    ifelse(as.character(x)!="", x, NA)
+}
+
+# Create data with only open answers ()
+# PTH
+PTH_VarName_raw <- c("Viikko","Sairaanhoitopiiri","Järjestäjäorganisaatio","lopa_subject","lopa_created","lopa_updated","lopa_draft","PTH.avosh.ps","pth_service_availability_comment_1","PTH.vos.ps","pth_service_availability_comment_2","PTH.neuv.ps","pth_service_availability_comment_3","PTH.kouluth.ps","pth_service_availability_comment_4","PTH.opiskth.ps","pth_service_availability_comment_5","PTH.kunt.ps","pth_service_availability_comment_6","PTH.suunth.ps","pth_service_availability_comment_7","PTH.mieli.ps","pth_service_availability_comment_8","PTH.päihde.ps","pth_service_availability_comment_9","PTH.roko.ps","pth_service_action_comment_1","PTH.test.ps","pth_service_action_comment_2","PTH.tjälj.ps","pth_service_action_comment_3","PTH.tneuvo.ps","pth_service_passenger_trafic_comment_1","PTH.todtark.ps","pth_service_passenger_trafic_comment_2","PTH.testmtulo.ps","pth_service_passenger_trafic_comment_3","PTH.2.test.ps","pth_service_passenger_trafic_comment_4","PTH.lapsimttperus.ps","pth_service_mental_health_child_comment_1","PTH.lapsimtttesh","pth_service_mental_health_child_comment_2","PTH.nuorimttperus.ps","pth_service_mental_health_young_comment_1","PTH.nuorimttesh.ps","pth_service_mental_health_young_comment_2","PTH.aikuismttperus","pth_service_mental_health_adult_comment_1","PTH.aikuismttesh.ps","pth_service_mental_health_adult_comment_2","PTH.kiirsupist.ps","PTH.toimuud.ps","PTH.etäplis.ps","PTH.ostop.ps","PTH.muuten.ps","PTH.tmpriittäv.ps","PTH.avosh.hr","pth_personnel_sufficiency_comment_1","PTH.vos.hr","pth_personnel_sufficiency_comment_2","PTH.neuv.hr","pth_personnel_sufficiency_comment_3","PTH.kouluth.hr","pth_personnel_sufficiency_comment_4","PTH.opiskth.hr","pth_personnel_sufficiency_comment_5","PTH.kunt.hr","pth_personnel_sufficiency_comment_6","PTH.suunth.hr","pth_personnel_sufficiency_comment_7","PTH.mieli.hr","pth_personnel_sufficiency_comment_8","PTH.päihde.hr","pth_personnel_sufficiency_comment_9","PTH.roko.hr","pth_personnel_sufficiency_action_comment_1","PTH.test.hr","pth_personnel_sufficiency_action_comment_2","PTH.tjälj.hr","pth_personnel_sufficiency_action_comment_3","PTH.tneuv.hr","pth_personnel_sufficiency_passenger_trafic_comment_1","PTH.todtark.hr","pth_personnel_sufficiency_passenger_trafic_comment_2","PTH.testmsaap.hr","pth_personnel_sufficiency_passenger_trafic_comment_3","PTH.2.test.hr","pth_personnel_sufficiency_passenger_trafic_comment_4","PTH.lainsääd.hr","PTH.henksiir.hr","PTH.henkrekry.hr","PTH.neuvot.hr","PTH.ostop.hr","PTH.muuten.hr","PTH.tmpriittäv.hr", "pth_service_availability_option_10", "pth_service_availability_comment_10", "pth_service_availability_option_11", "pth_service_availability_comment_11", "pth_personnel_sufficiency_option_10", "pth_personnel_sufficiency_comment_10", "pth_personnel_sufficiency_option_11", "pth_personnel_sufficiency_comment_11")
+
+PTH_new <- read.xlsx2(params$PTH_file,
+                      sheetIndex = 1, 
+                      header = T)
+
+PTH_VarName_new <- c("area_code","area_name","subject_name","lopa_subject","lopa_created","lopa_updated","lopa_draft","pth_service_availability_option_1","pth_service_availability_comment_1","pth_service_availability_option_2","pth_service_availability_comment_2","pth_service_availability_option_3","pth_service_availability_comment_3","pth_service_availability_option_4","pth_service_availability_comment_4","pth_service_availability_option_5","pth_service_availability_comment_5","pth_service_availability_option_6","pth_service_availability_comment_6","pth_service_availability_option_7","pth_service_availability_comment_7","pth_service_availability_option_8","pth_service_availability_comment_8","pth_service_availability_option_9","pth_service_availability_comment_9","pth_service_action_option_1","pth_service_action_comment_1","pth_service_action_option_2","pth_service_action_comment_2","pth_service_action_option_3","pth_service_action_comment_3","pth_service_passenger_trafic_option_1","pth_service_passenger_trafic_comment_1","pth_service_passenger_trafic_option_2","pth_service_passenger_trafic_comment_2","pth_service_passenger_trafic_option_3","pth_service_passenger_trafic_comment_3","pth_service_passenger_trafic_option_4","pth_service_passenger_trafic_comment_4","pth_service_mental_health_child_option_1","pth_service_mental_health_child_comment_1","pth_service_mental_health_child_option_2","pth_service_mental_health_child_comment_2","pth_service_mental_health_young_option_1","pth_service_mental_health_young_comment_1","pth_service_mental_health_young_option_2","pth_service_mental_health_young_comment_2","pth_service_mental_health_adult_option_1","pth_service_mental_health_adult_comment_1","pth_service_mental_health_adult_option_2","pth_service_mental_health_adult_comment_2","pth_service_availability_manage_1","pth_service_availability_manage_2","pth_service_availability_manage_3","pth_service_availability_manage_4","pth_service_availability_manage_9","pth_service_assessment","pth_personnel_sufficiency_option_1","pth_personnel_sufficiency_comment_1","pth_personnel_sufficiency_option_2","pth_personnel_sufficiency_comment_2","pth_personnel_sufficiency_option_3","pth_personnel_sufficiency_comment_3","pth_personnel_sufficiency_option_4","pth_personnel_sufficiency_comment_4","pth_personnel_sufficiency_option_5","pth_personnel_sufficiency_comment_5","pth_personnel_sufficiency_option_6","pth_personnel_sufficiency_comment_6","pth_personnel_sufficiency_option_7","pth_personnel_sufficiency_comment_7","pth_personnel_sufficiency_option_8","pth_personnel_sufficiency_comment_8","pth_personnel_sufficiency_option_9","pth_personnel_sufficiency_comment_9","pth_personnel_sufficiency_action_option_1","pth_personnel_sufficiency_action_comment_1","pth_personnel_sufficiency_action_option_2","pth_personnel_sufficiency_action_comment_2","pth_personnel_sufficiency_action_option_3","pth_personnel_sufficiency_action_comment_3","pth_personnel_sufficiency_passenger_trafic_option_1","pth_personnel_sufficiency_passenger_trafic_comment_1","pth_personnel_sufficiency_passenger_trafic_option_2","pth_personnel_sufficiency_passenger_trafic_comment_2","pth_personnel_sufficiency_passenger_trafic_option_3","pth_personnel_sufficiency_passenger_trafic_comment_3","pth_personnel_sufficiency_passenger_trafic_option_4","pth_personnel_sufficiency_passenger_trafic_comment_4","pth_personnel_sufficiency_situation_manage_1","pth_personnel_sufficiency_situation_manage_2","pth_personnel_sufficiency_situation_manage_3","pth_personnel_sufficiency_situation_manage_4","pth_personnel_sufficiency_situation_manage_5","pth_personnel_sufficiency_situation_manage_9","pth_personnel_assessment", "pth_service_availability_option_10", "pth_service_availability_comment_10", "pth_service_availability_option_11", "pth_service_availability_comment_11" , "pth_personnel_sufficiency_option_10", "pth_personnel_sufficiency_comment_10", "pth_personnel_sufficiency_option_11", "pth_personnel_sufficiency_comment_11")
+
+PTH_new[, PTH_VarName_new[!PTH_VarName_new %in% names(PTH_new)]] <- NA
+PTH_new$area_code <- format(ymd(str_extract_all(PTH_new$lopa_created, "\\d{4}-\\d{2}-\\d{2}")), "%G-%V")
+PTH_new <- PTH_new[names(PTH_new) %in% PTH_VarName_new]
+PTH_new <- PTH_new %>% 
+  subset(select = PTH_VarName_new)
+names(PTH_new) <- PTH_VarName_raw
+PTH_open <- PTH_new %>% 
+  mutate_each(funs(empty_as_na)) 
+
+# ESH
+# Variable names in file 2021.11.01
+ESH_VarName_raw <- c("Viikko","Sairaanhoitopiiri","Järjestäjäorganisaatio","lopa_subject","lopa_created","lopa_updated","lopa_draft","ESH.somaattinen.ps","esh_service_availability_comment_11","ESH.psykiatria.ps","esh_service_availability_comment_12","ESH.som.pkl.hr","esh_personnel_sufficiency_comment_1","ESH.som.vos.hr","esh_personnel_sufficiency_comment_2","ESH.psyk.pkl.hr","esh_personnel_sufficiency_comment_3","ESH.psyk.vos.hr","esh_personnel_sufficiency_comment_4","ESH.teho.vos.hr","esh_personnel_sufficiency_comment_5","ESH.lainsääd.hr","ESH.henksiir.hr","ESH.henkrekryt.hr","ESH.neuv.hr","ESH.ostop.hr","ESH.muuten.hr","ESH.tmp.riittäv.hr", "esh_service_availability_option_1",         "esh_service_availability_comment_1", "esh_service_availability_option_2", "esh_service_availability_comment_2", "esh_service_availability_option_3", "esh_service_availability_comment_3", "esh_service_availability_option_4", "esh_service_availability_comment_4", "esh_service_availability_option_5", "esh_service_availability_comment_5")
+
+# Loading new file
+ESH_new <- read.xlsx2(params$ESH_file,
+                      sheetIndex = 1, 
+                      header = T)
+
+# Varible names in file 2022.01.03
+ESH_VarName_new <- c("area_code","area_name","subject_name","lopa_subject","lopa_created","lopa_updated","lopa_draft","esh_service_availability_option_11","esh_service_availability_comment_11","esh_service_availability_option_12","esh_service_availability_comment_12","esh_personnel_sufficiency_option_1","esh_personnel_sufficiency_comment_1","esh_personnel_sufficiency_option_2","esh_personnel_sufficiency_comment_2","esh_personnel_sufficiency_option_3","esh_personnel_sufficiency_comment_3","esh_personnel_sufficiency_option_4","esh_personnel_sufficiency_comment_4","esh_personnel_sufficiency_option_5","esh_personnel_sufficiency_comment_5","esh_personnel_sufficiency_situation_manage_1","esh_personnel_sufficiency_situation_manage_2","esh_personnel_sufficiency_situation_manage_3","esh_personnel_sufficiency_situation_manage_4","esh_personnel_sufficiency_situation_manage_5","esh_personnel_sufficiency_situation_manage_9","esh_personnel_assessment","esh_service_availability_option_1",         "esh_service_availability_comment_1", "esh_service_availability_option_2", "esh_service_availability_comment_2", "esh_service_availability_option_3", "esh_service_availability_comment_3", "esh_service_availability_option_4", "esh_service_availability_comment_4", "esh_service_availability_option_5", "esh_service_availability_comment_5")
+
+# Get year and week
+ESH_new$area_code <- format(ymd(str_extract_all(ESH_new$lopa_created, "\\d{4}-\\d{2}-\\d{2}")), "%G-%V")
+# Remove extra column(s)
+ESH_new[, ESH_VarName_new[!ESH_VarName_new %in% names(ESH_new)]] <- NA
+ESH_new <- ESH_new[names(ESH_new) %in% ESH_VarName_new]
+ESH_new <- ESH_new %>% 
+  subset(select = ESH_VarName_new)
+# Give raw names to new data
+names(ESH_new) <- ESH_VarName_raw
+# Get open answers and substitube blanks with NAs
+ESH_open <- ESH_new %>% 
+  mutate_each(funs(empty_as_na)) 
+
+# SOS
+SOS_VarName_raw <- c("Viikko","Sairaanhoitopiiri","Järjestäjäorganisaatio","lopa_subject","lopa_created","lopa_updated","lopa_draft","SOS.iäkkäät.kotiin.ps","sos_service_availability_comment_1","SOS.iäkkäät.ympäriv.ps","sos_service_availability_comment_2","SOS.lapsip.ps","sos_service_availability_comment_3","SOS.lastens.ps","sos_service_availability_comment_4","SOS.vamm.ps","sos_service_availability_comment_5","SOS.työikä.ps","sos_service_availability_comment_6","SOS.perheoik.ps","sos_service_availability_comment_7","SOS.ttt.ps","sos_service_availability_comment_8","SOS.tilapasum.ps","sos_service_availability_comment_9","SOS.sospäiv.ps","sos_service_availability_comment_10","SOS.päihdet.ps","sos_service_availability_comment_11","SOS.omaishoit.ps","sos_service_availability_comment_12","SOS.kiiresup.ps","SOS.toimuud.ps","SOS.etäp.ps","SOS.ostop.ps","SOS.muuten.ps","SOS.riittäv.ps","SOS.iäkkäät.kotiin.hr","sos_personnel_sufficiency_comment_1","SOS.iäkkäät.ympäriv.hr","sos_personnel_sufficiency_comment_2","SOS.lapsip.hr","sos_personnel_sufficiency_comment_3","SOS.lastens.hr","sos_personnel_sufficiency_comment_4","SOS.vamm.hr","sos_personnel_sufficiency_comment_5","SOS.työikä.hr","sos_personnel_sufficiency_comment_6","SOS.perheoik.hr","sos_personnel_sufficiency_comment_7","SOS.ttt.hr","sos_personnel_sufficiency_comment_8","SOS.tilapasum.hr","sos_personnel_sufficiency_comment_9","SOS.sospäiv.hr","sos_personnel_sufficiency_comment_10","SOS.päihdet.hr","sos_personnel_sufficiency_comment_11","SOS.omaishoit.hr","sos_personnel_sufficiency_comment_12","SOS.lainsääd.hr","SOS.henksiir.hr","SOS.henkrekryt.hr","SOS.neuv.hr","SOS.ostop.hr","SOS.muuten.hr","SOS.tmp.riittäv.hr")
+
+SOS_new <- read.xlsx2(params$SOS_file,
+                      sheetIndex = 1, 
+                      header = T)
+
+SOS_VarName_new <- c("area_code","area_name","subject_name","lopa_subject","lopa_created","lopa_updated","lopa_draft","sos_service_availability_option_1","sos_service_availability_comment_1","sos_service_availability_option_2","sos_service_availability_comment_2","sos_service_availability_option_3","sos_service_availability_comment_3","sos_service_availability_option_4","sos_service_availability_comment_4","sos_service_availability_option_5","sos_service_availability_comment_5","sos_service_availability_option_6","sos_service_availability_comment_6","sos_service_availability_option_7","sos_service_availability_comment_7","sos_service_availability_option_8","sos_service_availability_comment_8","sos_service_availability_option_9","sos_service_availability_comment_9","sos_service_availability_option_10","sos_service_availability_comment_10","sos_service_availability_option_11","sos_service_availability_comment_11","sos_service_availability_option_12","sos_service_availability_comment_12","sos_service_availability_manage_1","sos_service_availability_manage_2","sos_service_availability_manage_3","sos_service_availability_manage_4","sos_service_availability_manage_9","sos_service_assessment","sos_personnel_sufficiency_option_1","sos_personnel_sufficiency_comment_1","sos_personnel_sufficiency_option_2","sos_personnel_sufficiency_comment_2","sos_personnel_sufficiency_option_3","sos_personnel_sufficiency_comment_3","sos_personnel_sufficiency_option_4","sos_personnel_sufficiency_comment_4","sos_personnel_sufficiency_option_5","sos_personnel_sufficiency_comment_5","sos_personnel_sufficiency_option_6","sos_personnel_sufficiency_comment_6","sos_personnel_sufficiency_option_7","sos_personnel_sufficiency_comment_7","sos_personnel_sufficiency_option_8","sos_personnel_sufficiency_comment_8","sos_personnel_sufficiency_option_9","sos_personnel_sufficiency_comment_9","sos_personnel_sufficiency_option_10","sos_personnel_sufficiency_comment_10","sos_personnel_sufficiency_option_11","sos_personnel_sufficiency_comment_11","sos_personnel_sufficiency_option_12","sos_personnel_sufficiency_comment_12","sos_personnel_sufficiency_situation_manage_1","sos_personnel_sufficiency_situation_manage_2","sos_personnel_sufficiency_situation_manage_3","sos_personnel_sufficiency_situation_manage_4","sos_personnel_sufficiency_situation_manage_5","sos_personnel_sufficiency_situation_manage_9","sos_personnel_assessment")
+
+SOS_new$area_code <- format(ymd(str_extract_all(SOS_new$lopa_created, "\\d{4}-\\d{2}-\\d{2}")), "%G-%V")
+SOS_new <- SOS_new[names(SOS_new) %in% SOS_VarName_new]
+SOS_new <- SOS_new %>% 
+  subset(select = SOS_VarName_new)
+names(SOS_new) <- SOS_VarName_raw
+
+SOS_open <- SOS_new %>% 
+  mutate_each(funs(empty_as_na)) 
+
+# Define a help function
+make_a_table <- function(variable, source){
+  
+  # get Municipality based on answer (3 or 4)
+  answer <- source[source[, which(colnames(source) == variable)] %in% c(3, 4), ] %>% 
+    subset(select = c("Järjestäjäorganisaatio", variable)) %>% 
+    mutate(Järjestäjäorganisaatio = as.character(Järjestäjäorganisaatio)) %>% 
+    arrange_all() %>% 
+    group_split(get(variable), .keep = F)
+  
+  if(length(answer) != 2){
+  answer[[2]] <- NA
+  }
+
+  # bind them and make the table
+  ans_tbl <- rowr::cbind.fill(answer[[1]]$Järjestäjäorganisaatio,
+                              answer[[2]]$Järjestäjäorganisaatio, 
+                              fill = NA)
+  # rename
+  colnames(ans_tbl) <- c("3 vastaukset", "4 vastaukset")
+  return(ans_tbl)
+}
+
+i = 15.15 # width of the side borders in the word_document output (in centimeters)
+w = i*0.3937 # width of the side borders in the word_document output (in inches)
+
+# Perusterveydenhuolto- palveluiden saatavuus
+Avosairaanhoito_PS <- make_a_table("PTH.avosh.ps", PTH_new)
+Vuodeosastohoito_PS <- make_a_table(("PTH.vos.ps"), PTH_new)
+Neuvolat_PS <- make_a_table("PTH.neuv.ps", PTH_new)
+Kouluterveydenhuolto_PS <- make_a_table("PTH.kouluth.ps", PTH_new)
+Opiskeluterveydenhuolto_PS <- make_a_table("PTH.opiskth.ps", PTH_new)
+Kuntoutus_PS <- make_a_table("PTH.kunt.ps", PTH_new)
+Sunnth_PS <- make_a_table("PTH.suunth.ps", PTH_new)
+Mielenterveystyö_PS <- make_a_table("PTH.mieli.ps", PTH_new)
+Päihdetyö_PS <- make_a_table("PTH.päihde.ps", PTH_new)
+Kotisairaalatoiminta_PS <- make_a_table("pth_service_availability_option_10", PTH_new)
+Perusterveydenhuollonpäivystys_PS <- make_a_table("pth_service_availability_option_11", PTH_new)
+Lapsimttperus_PS <- make_a_table("PTH.lapsimttperus.ps", PTH_new)
+Lapsimtttesh_PS <- make_a_table("PTH.lapsimtttesh", PTH_new)
+Nuorimttperus_PS <- make_a_table("PTH.nuorimttperus.ps", PTH_new)
+Nuorimttesh_PS <- make_a_table("PTH.nuorimttesh.ps", PTH_new)
+Aikuismttperus_PS <- make_a_table("PTH.aikuismttperus", PTH_new)
+Aikuismttesh_PS <- make_a_table("PTH.aikuismttesh.ps", PTH_new)
+
+# Perusterveydenhuolto- henkilöstön riittävyys
+Avosairaanhoito_HR <- make_a_table("PTH.avosh.hr", PTH_new)
+Vuodeosastohoito_HR <- make_a_table(("PTH.vos.hr"), PTH_new)
+Neuvolat_HR <- make_a_table("PTH.neuv.hr", PTH_new)
+Kouluterveydenhuolto_HR <- make_a_table("PTH.kouluth.hr", PTH_new)
+Opiskeluterveydenhuolto_HR <- make_a_table("PTH.opiskth.hr", PTH_new)
+Kuntoutus_HR <- make_a_table("PTH.kunt.hr", PTH_new)
+Sunnth_HR <- make_a_table("PTH.suunth.hr", PTH_new)
+Mielenterveystyö_HR <- make_a_table("PTH.mieli.hr", PTH_new)
+Päihdetyö_HR <- make_a_table("PTH.päihde.hr", PTH_new)
+Kotisairaalatoiminta_HR <- make_a_table("pth_personnel_sufficiency_option_10", PTH_new)
+Perusterveydenhuollonpäivystys_HR <- make_a_table("pth_personnel_sufficiency_option_11", PTH_new)
+
+# Sosiaalihuolto- palveluiden saatavuus
+Kotiinannettavat_PS <- make_a_table("SOS.iäkkäät.kotiin.ps", SOS_new)
+Ympärivuorokautiset_PS <- make_a_table("SOS.iäkkäät.ympäriv.ps", SOS_new)
+Lapsiperheiden_PS <- make_a_table("SOS.lapsip.ps", SOS_new)
+Lastensuojelu_PS <- make_a_table("SOS.lastens.ps", SOS_new)
+Vammais_PS <- make_a_table("SOS.vamm.ps", SOS_new)
+Työikäisten_PS <- make_a_table("SOS.työikä.ps", SOS_new)
+Perheoikeudelliset_PS <- make_a_table("SOS.perheoik.ps", SOS_new)
+Toimeentulotuki_PS <- make_a_table("SOS.ttt.ps", SOS_new)
+Tilapäinen_PS <- make_a_table("SOS.tilapasum.ps", SOS_new)
+Sosiaalipäivystys_PS <- make_a_table("SOS.sospäiv.ps", SOS_new) 
+Päihdetyö_SPS <- make_a_table("SOS.päihdet.ps", SOS_new)
+Omaishoitajien_PS <- make_a_table("SOS.omaishoit.ps", SOS_new)
+
+# Sosiaalihuolto- henkilöstön riittävyys
+Kotiinannettavat_HR <- make_a_table("SOS.iäkkäät.kotiin.hr", SOS_new)
+Ympärivuorokautiset_HR <- make_a_table("SOS.iäkkäät.ympäriv.hr", SOS_new)
+Lapsiperheiden_HR <- make_a_table("SOS.lapsip.hr", SOS_new)
+Lastensuojelu_HR <- make_a_table("SOS.lastens.hr", SOS_new)
+Vammais_HR <- make_a_table("SOS.vamm.hr", SOS_new)
+Työikäisten_HR <- make_a_table("SOS.työikä.hr", SOS_new)
+Perheoikeudelliset_HR <- make_a_table("SOS.perheoik.hr", SOS_new)
+Toimeentulotuki_HR <- make_a_table("SOS.ttt.hr", SOS_new)
+Tilapäinen_HR <- make_a_table("SOS.tilapasum.hr", SOS_new)
+Sosiaalipäivystys_HR <- make_a_table("SOS.sospäiv.hr", SOS_new)
+Päihdetyö_SHR <- make_a_table("SOS.päihdet.hr", SOS_new)
+Omaishoitajien_HR <- make_a_table("SOS.omaishoit.hr", SOS_new)
+
+# Erikoissairaanhoito- palveluiden saatavuus
+SomaattinenErikoissairaanhoito_tehohoito <- make_a_table("esh_service_availability_option_1", ESH_new)
+SomaattinenErikoissairaanhoito_päivystys <- make_a_table("esh_service_availability_option_2", ESH_new)
+SomaattinenErikoissairaanhoito_leikkaus <- make_a_table("esh_service_availability_option_3", ESH_new)
+SomaattinenErikoissairaanhoito_synnytystenhoito <- make_a_table("esh_service_availability_option_4", ESH_new)
+SomaattinenErikoissairaanhoito_laboratorio <- make_a_table("esh_service_availability_option_5", ESH_new)
+PsykiatrinenErikoissairaanhoito <- make_a_table("ESH.psykiatria.ps", ESH_new)
+
+# Erikoissairaanhoito- henkilöstön riittävyys
+SomaattinenPoliklinikat <- make_a_table("ESH.som.pkl.hr", ESH_new)
+SomaattinenVuodeosastohoito <- make_a_table("ESH.som.vos.hr", ESH_new)
+PsykiatriaPoliklinikat <- make_a_table("ESH.psyk.pkl.hr", ESH_new)
+PsykiatriaVuodeosastohoito <- make_a_table("ESH.psyk.vos.hr", ESH_new)
+TehohoitoVuodeosastohoito <- make_a_table("ESH.teho.vos.hr", ESH_new)
+
+```
+
+# Perusterveydenhuolto- palveluiden saatavuus
+
+##### Avosairaanhoito/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Avosairaanhoito_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Avosairaanhoito_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Vuodeosastohoito/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Vuodeosastohoito_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Vuodeosastohoito_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Neuvolat/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Neuvolat_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Neuvolat_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Kouluterveydenhuolto/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Kouluterveydenhuolto_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Kouluterveydenhuolto_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Opiskeluterveydenhuolto/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Opiskeluterveydenhuolto_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Opiskeluterveydenhuolto_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Toimintakykyä tukevat palvelut (kuntoutus)	/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Kuntoutus_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Kuntoutus_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Suun terveydenhuolto/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Sunnth_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Sunnth_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Mielenterveystyö/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Mielenterveystyö_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Mielenterveystyö_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Päihdetyö/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Päihdetyö_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Päihdetyö_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Kotisairaalatoiminta/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Kotisairaalatoiminta_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Kotisairaalatoiminta_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Perusterveydenhuollon päivystys/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Perusterveydenhuollonpäivystys_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Perusterveydenhuollonpäivystys_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Lasten mielenterveyspalvelut: perustaso/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Lapsimttperus_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Lapsimttperus_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Lasten mielenterveyspalvelut: erikoissairaanhoito/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Lapsimtttesh_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Lapsimtttesh_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Nuorten mielenterveyspalvelut: perustaso/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Nuorimttperus_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Nuorimttperus_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Nuorten mielenterveyspalvelut: erikoissairaanhoito/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Nuorimttesh_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Nuorimttesh_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Aikuisten mielenterveyspalvelut: perustaso/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Aikuismttperus_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Aikuismttperus_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Aikuisten mielenterveyspalvelut: erikoissairaanhoito/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Aikuismttesh_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Aikuismttesh_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+# Perusterveydenhuolto- henkilöstön riittävyys
+
+##### Avosairaanhoito/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Avosairaanhoito_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Avosairaanhoito_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Vuodeosastohoito/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Vuodeosastohoito_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Vuodeosastohoito_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Neuvolat/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Neuvolat_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Neuvolat_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Kouluterveydenhuolto/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Kouluterveydenhuolto_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Kouluterveydenhuolto_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Opiskeluterveydenhuolto/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Opiskeluterveydenhuolto_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Opiskeluterveydenhuolto_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Toimintakykyä tukevat palvelut (kuntoutus)/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Kuntoutus_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Kuntoutus_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Suun terveydenhuolto/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Sunnth_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Sunnth_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Mielenterveystyö/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Mielenterveystyö_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Mielenterveystyö_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Päihdetyö/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Päihdetyö_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Päihdetyö_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Kotisairaalatoiminta/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Kotisairaalatoiminta_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Kotisairaalatoiminta_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Perusterveydenhuollon päivystys/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Perusterveydenhuollonpäivystys_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Perusterveydenhuollonpäivystys_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+# Sosiaalihuolto- palveluiden saatavuus
+
+##### Iäkkäiden palvelut: kotiin annettavat palvelut/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Kotiinannettavat_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Kotiinannettavat_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Iäkkäiden palvelut: ympärivuorokautiset palvelut/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Ympärivuorokautiset_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Ympärivuorokautiset_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Lapsiperheiden palvelut/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Lapsiperheiden_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Lapsiperheiden_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Lastensuojelu/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Lastensuojelu_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Lastensuojelu_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Vammaispalvelut/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Vammais_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Vammais_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Työikäisten palvelut/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Työikäisten_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Työikäisten_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Perheoikeudelliset palvelut/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Perheoikeudelliset_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Perheoikeudelliset_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Toimeentulotuki, kunnan myöntämä/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Toimeentulotuki_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Toimeentulotuki_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Tilapäinen asuminen/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Tilapäinen_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Tilapäinen_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Sosiaalipäivystys/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Sosiaalipäivystys_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Sosiaalipäivystys_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Päihdetyö/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Päihdetyö_SPS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Päihdetyö_SPS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Omaishoitajien palvelut/ palveluiden saatavuus
+
+```{r echo=FALSE}
+Omaishoitajien_PS %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Omaishoitajien_PS)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+# Sosiaalihuolto- henkilöstön riittävyys
+
+##### Iäkkäiden palvelut: kotiin annettavat palvelut/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Kotiinannettavat_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Kotiinannettavat_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Iäkkäiden palvelut: ympärivuorokautiset palvelut/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Ympärivuorokautiset_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Ympärivuorokautiset_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Lapsiperheiden palvelut/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Lapsiperheiden_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Lapsiperheiden_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Lastensuojelu/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Lastensuojelu_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Lastensuojelu_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Vammaispalvelut/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Vammais_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Vammais_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Työikäisten palvelut/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Työikäisten_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Työikäisten_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Perheoikeudelliset palvelut/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Perheoikeudelliset_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Perheoikeudelliset_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Toimeentulotuki, kunnan myöntämä/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Toimeentulotuki_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Toimeentulotuki_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Tilapäinen asuminen/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Tilapäinen_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Tilapäinen_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Sosiaalipäivystys/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Sosiaalipäivystys_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Sosiaalipäivystys_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Päihdetyö/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Päihdetyö_SHR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Päihdetyö_SHR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Omaishoitajien palvelut/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+Omaishoitajien_HR %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(Omaishoitajien_HR)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+
+# Erikoissairaanhoito- palveluiden saatavuus
+
+##### Somaattinen erikoissairaanhoito: tehohoito/ palveluiden saatavuus
+
+```{r echo=FALSE}
+SomaattinenErikoissairaanhoito_tehohoito %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(SomaattinenErikoissairaanhoito_tehohoito)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Somaattinen erikoissairaanhoito: päivystys- ja ensihoito/ palveluiden saatavuus
+
+```{r echo=FALSE}
+SomaattinenErikoissairaanhoito_päivystys %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(SomaattinenErikoissairaanhoito_päivystys)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Somaattinen erikoissairaanhoito: leikkaus- ja anestesiahoito/ palveluiden saatavuus
+
+```{r echo=FALSE}
+SomaattinenErikoissairaanhoito_leikkaus %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(SomaattinenErikoissairaanhoito_leikkaus)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Somaattinen erikoissairaanhoito: synnytysten hoito/ palveluiden saatavuus
+
+```{r echo=FALSE}
+SomaattinenErikoissairaanhoito_synnytystenhoito %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(SomaattinenErikoissairaanhoito_synnytystenhoito)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Somaattinen erikoissairaanhoito: laboratorio- ja kuvantamistutkimukset/ palveluiden saatavuus
+
+```{r echo=FALSE}
+SomaattinenErikoissairaanhoito_laboratorio %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(SomaattinenErikoissairaanhoito_laboratorio)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Psykiatrinen erikoissairaanhoito/ palveluiden saatavuus
+
+```{r echo=FALSE}
+PsykiatrinenErikoissairaanhoito %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(PsykiatrinenErikoissairaanhoito)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+# Erikoissairaanhoito- henkilöstön riittävyys
+
+##### Somaattinen: Poliklinikat / avosairaanhoito/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+SomaattinenPoliklinikat %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(SomaattinenPoliklinikat)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Somaattinen: Vuodeosastohoito/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+SomaattinenVuodeosastohoito %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(SomaattinenVuodeosastohoito)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Psykiatria: Poliklinikat / avosairaanhoito/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+PsykiatriaPoliklinikat %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(PsykiatriaPoliklinikat)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+
+##### Psykiatria: Vuodeosastohoito/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+PsykiatriaVuodeosastohoito %>% 
+  flextable() %>% 
+  theme_box() %>% 
+  width(., width = (w/(ncol(PsykiatriaVuodeosastohoito)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header") %>% 
+  width(., width = (w/(ncol(PsykiatriaVuodeosastohoito))))
+
+```
+
+##### Tehohoito: Vuodeosastohoito/ henkilöstön riittävyys
+
+```{r echo=FALSE}
+TehohoitoVuodeosastohoito %>% 
+  flextable() %>% 
+  theme_box() %>% 
+    width(., width = (w/(ncol(TehohoitoVuodeosastohoito)))) %>% 
+  fontsize(size = 10) %>% 
+  font(part = "all", fontname = "Arial") %>% 
+  bg(i = 1, bg = c("yellow", "red"), part = "header")
+
+```
+

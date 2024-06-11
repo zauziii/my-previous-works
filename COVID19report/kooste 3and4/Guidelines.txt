@@ -1,0 +1,4 @@
+1. Open kooste3n4.rmd to change ESH_file, PTH_file and SOS_file to the latest file path (And also the path of kooste-template.docx). 
+	NB: kooste-template.docx and kooste3n4.Rmd should be in the same folder.
+2. Run kooste-render.R or simply click knit button in the Rmd file.
+	NB: If you use kooste-render.R remember to change output_dir to where you want to put the docx file (or even the name - output_file); if use knit, the output file will be in the current working directory.

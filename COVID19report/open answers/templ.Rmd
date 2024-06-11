@@ -1,0 +1,405 @@
+---
+title: ' '
+params:
+  ESH_file: /home/zzhh/mnt/ZZHH/_Desktop/Tasks/Koronaraportointi/covid_esh_tilannekuva_2022-09-08.xls
+  PTH_file: /home/zzhh/mnt/ZZHH/_Desktop/Tasks/Koronaraportointi/covid_pth_tilannekuva_2022-09-08.xls
+  SOS_file: /home/zzhh/mnt/ZZHH/_Desktop/Tasks/Koronaraportointi/covid_sos_tilannekuva_2022-09-08.xls
+  Sairaanhoitopiiri: HUS
+  date: "28.02.2022"
+output:
+  word_document:
+    reference_docx: /home/zzhh/Desktop/koronaraportointi/template.docx
+---
+
+```{r include=FALSE, }
+library("xlsx")
+library("eply")
+library("tidyverse")
+library("lubridate")
+
+# Define a helper function
+empty_as_na <- function(x){
+    if("factor" %in% class(x)) x <- as.character(x) ## since ifelse wont work with factors
+    ifelse(as.character(x)!="", x, NA)
+}
+
+# Create data with only open answers ()
+# PTH
+PTH_VarName_raw <- c("Viikko","Sairaanhoitopiiri","Järjestäjäorganisaatio","lopa_subject","lopa_created","lopa_updated","lopa_draft","PTH.avosh.ps","pth_service_availability_comment_1","PTH.vos.ps","pth_service_availability_comment_2","PTH.neuv.ps","pth_service_availability_comment_3","PTH.kouluth.ps","pth_service_availability_comment_4","PTH.opiskth.ps","pth_service_availability_comment_5","PTH.kunt.ps","pth_service_availability_comment_6","PTH.suunth.ps","pth_service_availability_comment_7","PTH.mieli.ps","pth_service_availability_comment_8","PTH.päihde.ps","pth_service_availability_comment_9","PTH.roko.ps","pth_service_action_comment_1","PTH.test.ps","pth_service_action_comment_2","PTH.tjälj.ps","pth_service_action_comment_3","PTH.tneuvo.ps","pth_service_passenger_trafic_comment_1","PTH.todtark.ps","pth_service_passenger_trafic_comment_2","PTH.testmtulo.ps","pth_service_passenger_trafic_comment_3","PTH.2.test.ps","pth_service_passenger_trafic_comment_4","PTH.lapsimttperus.ps","pth_service_mental_health_child_comment_1","PTH.lapsimtttesh","pth_service_mental_health_child_comment_2","PTH.nuorimttperus.ps","pth_service_mental_health_young_comment_1","PTH.nuorimttesh.ps","pth_service_mental_health_young_comment_2","PTH.aikuismttperus","pth_service_mental_health_adult_comment_1","PTH.aikuismttesh.ps","pth_service_mental_health_adult_comment_2","PTH.kiirsupist.ps","PTH.toimuud.ps","PTH.etäplis.ps","PTH.ostop.ps","PTH.muuten.ps","PTH.tmpriittäv.ps","PTH.avosh.hr","pth_personnel_sufficiency_comment_1","PTH.vos.hr","pth_personnel_sufficiency_comment_2","PTH.neuv.hr","pth_personnel_sufficiency_comment_3","PTH.kouluth.hr","pth_personnel_sufficiency_comment_4","PTH.opiskth.hr","pth_personnel_sufficiency_comment_5","PTH.kunt.hr","pth_personnel_sufficiency_comment_6","PTH.suunth.hr","pth_personnel_sufficiency_comment_7","PTH.mieli.hr","pth_personnel_sufficiency_comment_8","PTH.päihde.hr","pth_personnel_sufficiency_comment_9","PTH.roko.hr","pth_personnel_sufficiency_action_comment_1","PTH.test.hr","pth_personnel_sufficiency_action_comment_2","PTH.tjälj.hr","pth_personnel_sufficiency_action_comment_3","PTH.tneuv.hr","pth_personnel_sufficiency_passenger_trafic_comment_1","PTH.todtark.hr","pth_personnel_sufficiency_passenger_trafic_comment_2","PTH.testmsaap.hr","pth_personnel_sufficiency_passenger_trafic_comment_3","PTH.2.test.hr","pth_personnel_sufficiency_passenger_trafic_comment_4","PTH.lainsääd.hr","PTH.henksiir.hr","PTH.henkrekry.hr","PTH.neuvot.hr","PTH.ostop.hr","PTH.muuten.hr","PTH.tmpriittäv.hr", "pth_service_availability_option_10", "pth_service_availability_comment_10", "pth_service_availability_option_11", "pth_service_availability_comment_11", "pth_personnel_sufficiency_option_10", "pth_personnel_sufficiency_comment_10", "pth_personnel_sufficiency_option_11", "pth_personnel_sufficiency_comment_11", "pth_personnel_sufficiency_situation_manage_6", "pth_protection_work_option_1", "pth_protection_work_option_2", "pth_protection_work_option_3", "pth_protection_work_option_4", "pth_protection_work_option_5", "pth_protection_work_option_6", "pth_protection_work_option_7", "pth_protection_work_option_8", "pth_protection_work_option_9", "pth_protection_work_option_10", "pth_protection_work_option_11")
+
+PTH_new <- read.xlsx2(params$PTH_file,
+                      sheetIndex = 1, 
+                      header = T)
+
+PTH_VarName_new2 <- c("area_code","area_name","subject_name","lopa_subject","lopa_created","lopa_updated","lopa_draft","pth_service_availability_option_1","pth_service_availability_comment_1","pth_service_availability_option_2","pth_service_availability_comment_2","pth_service_availability_option_3","pth_service_availability_comment_3","pth_service_availability_option_4","pth_service_availability_comment_4","pth_service_availability_option_5","pth_service_availability_comment_5","pth_service_availability_option_6","pth_service_availability_comment_6","pth_service_availability_option_7","pth_service_availability_comment_7","pth_service_availability_option_8","pth_service_availability_comment_8","pth_service_availability_option_9","pth_service_availability_comment_9","pth_service_action_option_1","pth_service_action_comment_1","pth_service_action_option_2","pth_service_action_comment_2","pth_service_action_option_3","pth_service_action_comment_3","pth_service_passenger_trafic_option_1","pth_service_passenger_trafic_comment_1","pth_service_passenger_trafic_option_2","pth_service_passenger_trafic_comment_2","pth_service_passenger_trafic_option_3","pth_service_passenger_trafic_comment_3","pth_service_passenger_trafic_option_4","pth_service_passenger_trafic_comment_4","pth_service_mental_health_child_option_1","pth_service_mental_health_child_comment_1","pth_service_mental_health_child_option_2","pth_service_mental_health_child_comment_2","pth_service_mental_health_young_option_1","pth_service_mental_health_young_comment_1","pth_service_mental_health_young_option_2","pth_service_mental_health_young_comment_2","pth_service_mental_health_adult_option_1","pth_service_mental_health_adult_comment_1","pth_service_mental_health_adult_option_2","pth_service_mental_health_adult_comment_2","pth_service_availability_manage_1","pth_service_availability_manage_2","pth_service_availability_manage_3","pth_service_availability_manage_4","pth_service_availability_manage_9","pth_service_assessment","pth_personnel_sufficiency_option_1","pth_personnel_sufficiency_comment_1","pth_personnel_sufficiency_option_2","pth_personnel_sufficiency_comment_2","pth_personnel_sufficiency_option_3","pth_personnel_sufficiency_comment_3","pth_personnel_sufficiency_option_4","pth_personnel_sufficiency_comment_4","pth_personnel_sufficiency_option_5","pth_personnel_sufficiency_comment_5","pth_personnel_sufficiency_option_6","pth_personnel_sufficiency_comment_6","pth_personnel_sufficiency_option_7","pth_personnel_sufficiency_comment_7","pth_personnel_sufficiency_option_8","pth_personnel_sufficiency_comment_8","pth_personnel_sufficiency_option_9","pth_personnel_sufficiency_comment_9","pth_personnel_sufficiency_action_option_1","pth_personnel_sufficiency_action_comment_1","pth_personnel_sufficiency_action_option_2","pth_personnel_sufficiency_action_comment_2","pth_personnel_sufficiency_action_option_3","pth_personnel_sufficiency_action_comment_3","pth_personnel_sufficiency_passenger_trafic_option_1","pth_personnel_sufficiency_passenger_trafic_comment_1","pth_personnel_sufficiency_passenger_trafic_option_2","pth_personnel_sufficiency_passenger_trafic_comment_2","pth_personnel_sufficiency_passenger_trafic_option_3","pth_personnel_sufficiency_passenger_trafic_comment_3","pth_personnel_sufficiency_passenger_trafic_option_4","pth_personnel_sufficiency_passenger_trafic_comment_4","pth_personnel_sufficiency_situation_manage_1","pth_personnel_sufficiency_situation_manage_2","pth_personnel_sufficiency_situation_manage_3","pth_personnel_sufficiency_situation_manage_4","pth_personnel_sufficiency_situation_manage_5","pth_personnel_sufficiency_situation_manage_9","pth_personnel_assessment", "pth_service_availability_option_10","pth_service_availability_comment_10","pth_service_availability_option_11", "pth_service_availability_comment_11","pth_personnel_sufficiency_option_10","pth_personnel_sufficiency_comment_10","pth_personnel_sufficiency_option_11","pth_personnel_sufficiency_comment_11","pth_personnel_sufficiency_situation_manage_6")
+
+PTH_VarName_new <- append(PTH_VarName_new2, 
+                           c("pth_protection_work_option_1",
+                             "pth_protection_work_option_2",
+                             "pth_protection_work_option_3",
+                             "pth_protection_work_option_4",
+                             "pth_protection_work_option_5",
+                             "pth_protection_work_option_6",
+                             "pth_protection_work_option_7",
+                             "pth_protection_work_option_8",
+                             "pth_protection_work_option_9",
+                             "pth_protection_work_option_10",
+                             "pth_protection_work_option_11"))
+
+PTH_new[, PTH_VarName_new[!PTH_VarName_new %in% names(PTH_new)]] <- NA
+PTH_new$area_code <- format(ymd(str_extract_all(PTH_new$lopa_created, "\\d{4}-\\d{2}-\\d{2}")), "%G-%V")
+PTH_new <- PTH_new[names(PTH_new) %in% PTH_VarName_new]
+PTH_new <- PTH_new %>% 
+  subset(select = PTH_VarName_new)
+names(PTH_new) <- PTH_VarName_raw
+
+PTH_open <- PTH_new %>% 
+  filter(Sairaanhoitopiiri == params$Sairaanhoitopiiri) %>% 
+  mutate_each(funs(empty_as_na)) 
+
+# ESH
+# Variable names in file 2021.11.01
+ESH_VarName_raw <- c("Viikko","Sairaanhoitopiiri","Järjestäjäorganisaatio","lopa_subject","lopa_created","lopa_updated","lopa_draft","ESH.somaattinen.ps","esh_service_availability_comment_11","ESH.psykiatria.ps","esh_service_availability_comment_12","ESH.som.pkl.hr","esh_personnel_sufficiency_comment_1","ESH.som.vos.hr","esh_personnel_sufficiency_comment_2","ESH.psyk.pkl.hr","esh_personnel_sufficiency_comment_3","ESH.psyk.vos.hr","esh_personnel_sufficiency_comment_4","ESH.teho.vos.hr","esh_personnel_sufficiency_comment_5","ESH.lainsääd.hr","ESH.henksiir.hr","ESH.henkrekryt.hr","ESH.neuv.hr","ESH.ostop.hr","ESH.muuten.hr","ESH.tmp.riittäv.hr","esh_service_availability_option_1","esh_service_availability_comment_1","esh_service_availability_option_2","esh_service_availability_comment_2","esh_service_availability_option_3","esh_service_availability_comment_3","esh_service_availability_option_4","esh_service_availability_comment_4","esh_service_availability_option_5","esh_service_availability_comment_5","esh_personnel_sufficiency_situation_manage_6","esh_protection_work_option_1", "esh_protection_work_option_2","esh_protection_work_option_3","esh_protection_work_option_4","esh_protection_work_option_5","esh_protection_work_option_12")
+
+# Loading new file
+ESH_new <- read.xlsx2(params$ESH_file,
+                      sheetIndex = 1, 
+                      header = T)
+
+# Varible names in file 2022.01.03
+ESH_VarName_new <- c("area_code","area_name","subject_name","lopa_subject","lopa_created","lopa_updated","lopa_draft","esh_service_availability_option_11","esh_service_availability_comment_11","esh_service_availability_option_12","esh_service_availability_comment_12","esh_personnel_sufficiency_option_1","esh_personnel_sufficiency_comment_1","esh_personnel_sufficiency_option_2","esh_personnel_sufficiency_comment_2","esh_personnel_sufficiency_option_3","esh_personnel_sufficiency_comment_3","esh_personnel_sufficiency_option_4","esh_personnel_sufficiency_comment_4","esh_personnel_sufficiency_option_5","esh_personnel_sufficiency_comment_5","esh_personnel_sufficiency_situation_manage_1","esh_personnel_sufficiency_situation_manage_2","esh_personnel_sufficiency_situation_manage_3","esh_personnel_sufficiency_situation_manage_4","esh_personnel_sufficiency_situation_manage_5","esh_personnel_sufficiency_situation_manage_9","esh_personnel_assessment","esh_service_availability_option_1","esh_service_availability_comment_1","esh_service_availability_option_2", "esh_service_availability_comment_2","esh_service_availability_option_3","esh_service_availability_comment_3", "esh_service_availability_option_4","esh_service_availability_comment_4","esh_service_availability_option_5", "esh_service_availability_comment_5","esh_personnel_sufficiency_situation_manage_6","esh_protection_work_option_1", "esh_protection_work_option_2","esh_protection_work_option_3","esh_protection_work_option_4","esh_protection_work_option_5","esh_protection_work_option_12")
+
+# Get year and week
+ESH_new$area_code <- format(ymd(str_extract_all(ESH_new$lopa_created, "\\d{4}-\\d{2}-\\d{2}")), "%G-%V")
+# Remove extra column(s)
+ESH_new[, ESH_VarName_new[!ESH_VarName_new %in% names(ESH_new)]] <- NA
+ESH_new <- ESH_new[names(ESH_new) %in% ESH_VarName_new]
+ESH_new <- ESH_new %>% 
+  subset(select = ESH_VarName_new)
+# Give raw names to new data
+names(ESH_new) <- ESH_VarName_raw
+# Get open answers and substitube blanks with NAs
+ESH_open <- ESH_new %>% 
+  filter(Sairaanhoitopiiri == params$Sairaanhoitopiiri) %>% 
+  mutate_each(funs(empty_as_na)) 
+
+# SOS
+SOS_VarName_raw <- c("Viikko","Sairaanhoitopiiri","Järjestäjäorganisaatio","lopa_subject","lopa_created","lopa_updated","lopa_draft","SOS.iäkkäät.kotiin.ps","sos_service_availability_comment_1","SOS.iäkkäät.ympäriv.ps","sos_service_availability_comment_2","SOS.lapsip.ps","sos_service_availability_comment_3","SOS.lastens.ps","sos_service_availability_comment_4","SOS.vamm.ps","sos_service_availability_comment_5","SOS.työikä.ps","sos_service_availability_comment_6","SOS.perheoik.ps","sos_service_availability_comment_7","SOS.ttt.ps","sos_service_availability_comment_8","SOS.tilapasum.ps","sos_service_availability_comment_9","SOS.sospäiv.ps","sos_service_availability_comment_10","SOS.päihdet.ps","sos_service_availability_comment_11","SOS.omaishoit.ps","sos_service_availability_comment_12","SOS.kiiresup.ps","SOS.toimuud.ps","SOS.etäp.ps","SOS.ostop.ps","SOS.muuten.ps","SOS.riittäv.ps","SOS.iäkkäät.kotiin.hr","sos_personnel_sufficiency_comment_1","SOS.iäkkäät.ympäriv.hr","sos_personnel_sufficiency_comment_2","SOS.lapsip.hr","sos_personnel_sufficiency_comment_3","SOS.lastens.hr","sos_personnel_sufficiency_comment_4","SOS.vamm.hr","sos_personnel_sufficiency_comment_5","SOS.työikä.hr","sos_personnel_sufficiency_comment_6","SOS.perheoik.hr","sos_personnel_sufficiency_comment_7","SOS.ttt.hr","sos_personnel_sufficiency_comment_8","SOS.tilapasum.hr","sos_personnel_sufficiency_comment_9","SOS.sospäiv.hr","sos_personnel_sufficiency_comment_10","SOS.päihdet.hr","sos_personnel_sufficiency_comment_11","SOS.omaishoit.hr","sos_personnel_sufficiency_comment_12","SOS.lainsääd.hr","SOS.henksiir.hr","SOS.henkrekryt.hr","SOS.neuv.hr","SOS.ostop.hr","SOS.muuten.hr","SOS.tmp.riittäv.hr", "sos_personnel_sufficiency_situation_manage_6","sos_protection_work_option_1","sos_protection_work_option_2","sos_protection_work_option_3","sos_protection_work_option_4","sos_protection_work_option_5","sos_protection_work_option_6","sos_protection_work_option_7","sos_protection_work_option_8","sos_protection_work_option_9","sos_protection_work_option_10","sos_protection_work_option_11","sos_protection_work_option_12")
+
+SOS_new <- read.xlsx2(params$SOS_file,
+                      sheetIndex = 1, 
+                      header = T)
+
+SOS_VarName_new <- c("area_code","area_name","subject_name","lopa_subject","lopa_created","lopa_updated","lopa_draft","sos_service_availability_option_1","sos_service_availability_comment_1","sos_service_availability_option_2","sos_service_availability_comment_2","sos_service_availability_option_3","sos_service_availability_comment_3","sos_service_availability_option_4","sos_service_availability_comment_4","sos_service_availability_option_5","sos_service_availability_comment_5","sos_service_availability_option_6","sos_service_availability_comment_6","sos_service_availability_option_7","sos_service_availability_comment_7","sos_service_availability_option_8","sos_service_availability_comment_8","sos_service_availability_option_9","sos_service_availability_comment_9","sos_service_availability_option_10","sos_service_availability_comment_10","sos_service_availability_option_11","sos_service_availability_comment_11","sos_service_availability_option_12","sos_service_availability_comment_12","sos_service_availability_manage_1","sos_service_availability_manage_2","sos_service_availability_manage_3","sos_service_availability_manage_4","sos_service_availability_manage_9","sos_service_assessment","sos_personnel_sufficiency_option_1","sos_personnel_sufficiency_comment_1","sos_personnel_sufficiency_option_2","sos_personnel_sufficiency_comment_2","sos_personnel_sufficiency_option_3","sos_personnel_sufficiency_comment_3","sos_personnel_sufficiency_option_4","sos_personnel_sufficiency_comment_4","sos_personnel_sufficiency_option_5","sos_personnel_sufficiency_comment_5","sos_personnel_sufficiency_option_6","sos_personnel_sufficiency_comment_6","sos_personnel_sufficiency_option_7","sos_personnel_sufficiency_comment_7","sos_personnel_sufficiency_option_8","sos_personnel_sufficiency_comment_8","sos_personnel_sufficiency_option_9","sos_personnel_sufficiency_comment_9","sos_personnel_sufficiency_option_10","sos_personnel_sufficiency_comment_10","sos_personnel_sufficiency_option_11","sos_personnel_sufficiency_comment_11","sos_personnel_sufficiency_option_12","sos_personnel_sufficiency_comment_12","sos_personnel_sufficiency_situation_manage_1","sos_personnel_sufficiency_situation_manage_2","sos_personnel_sufficiency_situation_manage_3","sos_personnel_sufficiency_situation_manage_4","sos_personnel_sufficiency_situation_manage_5","sos_personnel_sufficiency_situation_manage_9","sos_personnel_assessment","sos_personnel_sufficiency_situation_manage_6","sos_protection_work_option_1","sos_protection_work_option_2","sos_protection_work_option_3","sos_protection_work_option_4","sos_protection_work_option_5","sos_protection_work_option_6","sos_protection_work_option_7","sos_protection_work_option_8","sos_protection_work_option_9","sos_protection_work_option_10","sos_protection_work_option_11","sos_protection_work_option_12")
+
+SOS_new[, SOS_VarName_new[!SOS_VarName_new %in% names(SOS_new)]] <- NA
+SOS_new$area_code <- format(ymd(str_extract_all(SOS_new$lopa_created, "\\d{4}-\\d{2}-\\d{2}")), "%G-%V")
+SOS_new <- SOS_new[names(SOS_new) %in% SOS_VarName_new]
+SOS_new <- SOS_new %>% 
+  subset(select = SOS_VarName_new)
+names(SOS_new) <- SOS_VarName_raw
+
+SOS_open <- SOS_new %>% 
+  filter(Sairaanhoitopiiri == params$Sairaanhoitopiiri) %>% 
+  mutate_each(funs(empty_as_na)) 
+
+# Define a help function
+pr <- function(variable, source){
+  if (any(source[, which(colnames(source) == variable) - 1] %in% c(3, 4))) {
+      answer <- source[source[, which(colnames(source) == variable) - 1] %in% c(3, 4), ]
+      for(i in 1:length(answer[[variable]])){
+        if(is.na(answer[[variable]][i])){
+          next
+        } else{
+          cat(answer[[variable]][i], " (", answer["Järjestäjäorganisaatio"][i, ], ")", sep = "", "\n")
+        }
+      }
+  } else{
+    cat("")
+  }
+}
+
+# Nopea yhteenveto: 
+# Erikoissairaanhoito
+# Palvelujen saatavuus
+Somaattinen_Tehohoito <- capture.output(pr("esh_service_availability_comment_1", ESH_open))
+Somaattinen_Päivystys <- capture.output(pr("esh_service_availability_comment_2", ESH_open))
+Somaattinen_Leikkaus <- capture.output(pr("esh_service_availability_comment_3", ESH_open))
+Somaattinen_Synnytysten <- capture.output(pr("esh_service_availability_comment_4", ESH_open))
+Somaattinen_Laboratorio <- capture.output(pr("esh_service_availability_comment_5", ESH_open))
+
+
+# Henkilöstön riittävyys
+Somaattinen_poli <- capture.output(pr("esh_personnel_sufficiency_comment_1", ESH_open))
+Somaattinen_vuodeosasto <- capture.output(pr("esh_personnel_sufficiency_comment_2", ESH_open))
+Teho <- capture.output(pr("esh_personnel_sufficiency_comment_5", ESH_open))
+
+# Perusterveydenhuolto
+# Palvelujen saatavuus
+Avosh_p <- capture.output(pr("pth_service_availability_comment_1", PTH_open))
+Vuodeosasto_p <- capture.output(pr("pth_service_availability_comment_2", PTH_open))
+Kuntoutus_p <- capture.output(pr("pth_service_availability_comment_6", PTH_open))
+Suunth_p <- capture.output(pr("pth_service_availability_comment_7", PTH_open))
+Päihdetyö_p <- capture.output(pr("pth_service_availability_comment_9", PTH_open))
+Kotisairaalatoiminta_p <-  capture.output(pr("pth_service_availability_comment_10", PTH_open))
+Perusterveydenhuollon_p <-  capture.output(pr("pth_service_availability_comment_11", PTH_open))
+
+# Rokotusten, testausten ja tartunnanjäljityksen palvelujen saatavuus
+Rokotukset_p <- capture.output(pr("pth_service_action_comment_1", PTH_open))
+Testaukset_p <- capture.output(pr("pth_service_action_comment_2", PTH_open))
+Jäljitys_p <- capture.output(pr("pth_service_action_comment_3", PTH_open))
+
+# Rajat ylittävän matkustajaliikenteen palvelujen saatavuus
+Neuvonta_p <- capture.output(pr("pth_service_passenger_trafic_comment_1", PTH_open))
+Todistukset_p <- capture.output(pr("pth_service_passenger_trafic_comment_2", PTH_open))
+Testaus_p <- capture.output(pr("pth_service_passenger_trafic_comment_3", PTH_open))
+testi_p <- capture.output(pr("pth_service_passenger_trafic_comment_4", PTH_open))
+
+# Henkilöstön riittävyys
+Avosh_h <- capture.output(pr("pth_personnel_sufficiency_comment_1", PTH_open))
+Vuodeosasto_h <- capture.output(pr("pth_personnel_sufficiency_comment_2", PTH_open))
+Kuntoutus_h <- capture.output(pr("pth_personnel_sufficiency_comment_6", PTH_open))
+Suunth_h <- capture.output(pr("pth_personnel_sufficiency_comment_7", PTH_open))
+Päihdetyö_h <- capture.output(pr("pth_personnel_sufficiency_comment_9", PTH_open))
+Kotisairaalatoiminta_h <-  capture.output(pr("pth_personnel_sufficiency_comment_10", PTH_open))
+Perusterveydenhuollon_h <-  capture.output(pr("pth_personnel_sufficiency_comment_11", PTH_open))
+
+# Rokotusten, testausten ja tartunnanjäljityksen henkilöstön riittävyys
+Rokotukset_h <- capture.output(pr("pth_personnel_sufficiency_action_comment_1", PTH_open))
+Testaukset_h <- capture.output(pr("pth_personnel_sufficiency_action_comment_2", PTH_open))
+Jäljitys_h <- capture.output(pr("pth_personnel_sufficiency_action_comment_3", PTH_open))
+
+# Rajat ylittävän matkustajaliikenteen henkilöstön riittävyys
+Neuvonta_h <- capture.output(pr("pth_personnel_sufficiency_passenger_trafic_comment_1", PTH_open))
+Todistukset_h <- capture.output(pr("pth_personnel_sufficiency_passenger_trafic_comment_2", PTH_open))
+Testaus_h <- capture.output(pr("pth_personnel_sufficiency_passenger_trafic_comment_3", PTH_open))
+testi_h <- capture.output(pr("pth_personnel_sufficiency_passenger_trafic_comment_4", PTH_open))
+
+# Sosiaalihuolto
+# Palvelujen saatavuus
+Iäkkäiden_kotipalvelut_p <- capture.output(pr("sos_service_availability_comment_1", SOS_open))
+Iäkkäiden_ympärivuorokautiset_palvelut_p <- capture.output(pr("sos_service_availability_comment_2", SOS_open))
+Vammaispalvelut_p <- capture.output(pr("sos_service_availability_comment_5", SOS_open))
+Työikäisten_palvelut_p <- capture.output(pr("sos_service_availability_comment_6", SOS_open))
+Toimeentulotuki_p <- capture.output(pr("sos_service_availability_comment_8", SOS_open))
+Tilapäinen_asuminen_p <- capture.output(pr("sos_service_availability_comment_9", SOS_open))
+Sosiaalipäivystys_p <- capture.output(pr("sos_service_availability_comment_10", SOS_open))
+Päihdetyö_p <- capture.output(pr("sos_service_availability_comment_11", SOS_open))
+Omaishoitajien_palvelut_p <- capture.output(pr("sos_service_availability_comment_12", SOS_open))
+
+# Henkilöstön riittävyys
+Iäkkäiden_kotipalvelut_h <- capture.output(pr("sos_personnel_sufficiency_comment_1", SOS_open))
+Iäkkäiden_ympärivuorokautiset_palvelut_h <- capture.output(pr("sos_personnel_sufficiency_comment_2", SOS_open))
+Vammaispalvelut_h <- capture.output(pr("sos_personnel_sufficiency_comment_5", SOS_open))
+Työikäisten_palvelut_h <- capture.output(pr("sos_personnel_sufficiency_comment_6", SOS_open))
+Toimeentulotuki_h <- capture.output(pr("sos_personnel_sufficiency_comment_8", SOS_open))
+Tilapäinen_asuminen_h <- capture.output(pr("sos_personnel_sufficiency_comment_9", SOS_open))
+Sosiaalipäivystys_h <- capture.output(pr("sos_personnel_sufficiency_comment_10", SOS_open))
+Päihdetyö_h <- capture.output(pr("sos_personnel_sufficiency_comment_11", SOS_open))
+Omaishoitajien_palvelut_h <- capture.output(pr("sos_personnel_sufficiency_comment_12", SOS_open))
+
+# Nopea yhteenveto: 
+# Perusterveydenhuolto
+# Palvelujen saatavuus
+Neuvolat_p <- capture.output(pr("pth_service_availability_comment_3", PTH_open))
+Kouluterveydenhuolto_p <- capture.output(pr("pth_service_availability_comment_4", PTH_open))
+Opiskeluterveydenhuolto_p <- capture.output(pr("pth_service_availability_comment_5", PTH_open))
+
+# Henkilöstön riittävyys
+Neuvolat_h <- capture.output(pr("pth_personnel_sufficiency_comment_3", PTH_open))
+Kouluterveydenhuolto_h <- capture.output(pr("pth_personnel_sufficiency_comment_4", PTH_open))
+Opiskeluterveydenhuolto_h <- capture.output(pr("pth_personnel_sufficiency_comment_5", PTH_open))
+
+# Sosiaalihuolto
+# Palvelujen saatavuus
+Lapsiperheiden_palvelut_p <- capture.output(pr("sos_service_availability_comment_3", SOS_open))
+Lastensuojelu_p <- capture.output(pr("sos_service_availability_comment_4", SOS_open))
+Perheoikeudelliset_palvelut_p <- capture.output(pr("sos_service_availability_comment_7", SOS_open))
+
+# Henkilöstön riittävyys
+Lapsiperheiden_palvelut_h <- capture.output(pr("sos_personnel_sufficiency_comment_3", SOS_open))
+Lastensuojelu_h <- capture.output(pr("sos_personnel_sufficiency_comment_4", SOS_open))
+Perheoikeudelliset_palvelut_h <- capture.output(pr("sos_personnel_sufficiency_comment_7", SOS_open))
+
+# Tilannekuvakysely koronavirusepidemian vaikutuksista mielenterveyspalveluihin
+# Erikoissairaanhoito
+# Palvelujen saatavuus
+Psykiatria_p <- capture.output(pr("esh_service_availability_comment_12", ESH_open))
+# Henkilöstön riittävyys
+Psykiatrinen_poli_h <- capture.output(pr("esh_personnel_sufficiency_comment_3", ESH_open))
+Psykiatrinen_vuodeosasto_h <- capture.output(pr("esh_personnel_sufficiency_comment_4", ESH_open))
+
+# Perusterveydenhuolto
+# Palvelujen saatavuus
+Mielenterveys_p <- capture.output(pr("pth_service_availability_comment_8", PTH_open))
+# Henkilöstön riittävyys
+Mielenterveys_h <-  capture.output(pr("pth_personnel_sufficiency_comment_8", PTH_open))
+# Lasten mielenterveyspalveluiden saatavuus 
+Perustasolla_l <- capture.output(pr("pth_service_mental_health_child_comment_1", PTH_open))
+Erikoissairaanhoidossa_l <- capture.output(pr("pth_service_mental_health_child_comment_2", PTH_open))
+# Nuorten mielenterveyspalvelujen saatavuus 
+Perustasolla_n <-  capture.output(pr("pth_service_mental_health_young_comment_1", PTH_open))
+Erikoissairaanhoidossa_n <- capture.output(pr("pth_service_mental_health_young_comment_2", PTH_open))
+# Aikuisten mielenterveyspalvelujen saatavuus 
+Perustasolla_a <- capture.output(pr("pth_service_mental_health_adult_comment_1", PTH_open))
+Erikoissairaanhoidossa_a <- capture.output(pr("pth_service_mental_health_adult_comment_2", PTH_open))
+
+```
+
+# Tilannekuvakysely koronavirusepidemian vaikutuksista palvelujärjestelmään
+
+## Avovastaukset valinnoista "huolestuttava" tai "vaikeutunut", `r params$date`: `r params$Sairaanhoitopiiri`
+
+### Erikoissairaanhoito
+
+##### Palvelujen saatavuus
+
+-   Somaattinen Tehohoito: `r Somaattinen_Tehohoito`
+-   Somaattinen Päivystys- ja ensihoito: `r Somaattinen_Päivystys`
+-   Somaattinen Leikkaus- ja anestesiahoito: `r Somaattinen_Leikkaus`
+-   Somaattinen Synnytysten hoito: `r Somaattinen_Synnytysten`
+-   Somaattinen Laboratorio- ja kuvantamistutkimuk-set: `r Somaattinen_Laboratorio`
+
+##### Henkilöstön riittävyys
+
+-   Somaattinen poli&avo: `r Somaattinen_poli`
+-   Somaattinen vuodeosasto: `r Somaattinen_vuodeosasto`
+-   Teho: `r Teho`
+
+### Perusterveydenhuolto
+
+##### Palvelujen saatavuus
+
+-   Avosh: `r Avosh_p`
+-   Vuodeosasto: `r Vuodeosasto_p`
+-   Kuntoutus: `r Kuntoutus_p`
+-   Suun th: `r Suunth_p`
+-   Päihdetyö: `r Päihdetyö_p`
+
+##### Rokotusten, testausten ja tartunnanjäljityksen palvelujen saatavuus
+
+-   Rokotukset: `r Rokotukset_p`
+-   Testaukset: `r Testaukset_p`
+-   Jäljitys: `r Jäljitys_p`
+
+##### Rajat ylittävän matkustajaliikenteen palvelujen saatavuus
+
+-   Neuvonta: `r Neuvonta_p`
+-   Todistukset: `r Todistukset_p`
+-   Testaus: `r Testaus_p`
+-   2-testi: `r testi_p`
+
+##### Henkilöstön riittävyys
+
+-   Avosh: `r Avosh_h`
+-   Vuodeosasto: `r Vuodeosasto_h`
+-   Kuntoutus: `r Kuntoutus_h`
+-   Suun th: `r Suunth_h`
+-   Päihdetyö: `r Päihdetyö_h`
+
+##### Rokotusten, testausten ja tartunnanjäljityksen henkilöstön riittävyys
+
+-   Rokotukset: `r Rokotukset_h`
+-   Testaukset: `r Testaukset_h`
+-   Jäljitys: `r Jäljitys_h`
+
+##### Rajat ylittävän matkustajaliikenteen terveydenhuoltohenkilöstön riittävyys
+
+-   Neuvonta: `r Neuvonta_h`
+-   Todistukset: `r Todistukset_h`
+-   Testaus: `r Testaus_h`
+-   2-testi: `r testi_h`
+
+### Sosiaalihuolto
+
+##### Palvelujen saatavuus
+
+-   Iäkkäiden kotipalvelut: `r Iäkkäiden_kotipalvelut_p`
+-   Iäkkäiden ympärivuorokautiset palvelut: `r Iäkkäiden_ympärivuorokautiset_palvelut_p`
+-   Vammaispalvelut: `r Vammaispalvelut_p`
+-   Työikäisten palvelut: `r Työikäisten_palvelut_p`
+-   Toimeentulotuki: `r Toimeentulotuki_p`
+-   Tilapäinen asuminen: `r Tilapäinen_asuminen_p`
+-   Sosiaalipäivystys: `r Sosiaalipäivystys_p`
+-   Päihdetyö: `r Päihdetyö_p`
+-   Omaishoitajien palvelut: `r Omaishoitajien_palvelut_p`
+
+##### Henkilöstön riittävyys
+
+-   Iäkkäiden kotipalvelut: `r Iäkkäiden_kotipalvelut_h`
+-   Iäkkäiden ympärivuorokautiset palvelut: `r Iäkkäiden_ympärivuorokautiset_palvelut_h`
+-   Vammaispalvelut: `r Vammaispalvelut_h`
+-   Työikäisten palvelut: `r Työikäisten_palvelut_h`
+-   Toimeentulotuki: `r Toimeentulotuki_h`
+-   Tilapäinen asuminen: `r Tilapäinen_asuminen_h`
+-   Sosiaalipäivystys: `r Sosiaalipäivystys_h`
+-   Päihdetyö: `r Päihdetyö_h`
+-   Omaishoitajien palvelut: `r Omaishoitajien_palvelut_h`
+
+# Tilannekuvakysely koronavirusepidemian vaikutuksista lasten, nuorten ja perheiden palvelujärjestelmään
+
+### Perusterveydenhuolto
+
+##### Palvelujen saatavuus
+
+-   Neuvolat: `r Neuvolat_p`
+-   Kouluterveydenhuolto: `r Kouluterveydenhuolto_p`
+-   Opiskeluterveydenhuolto: `r Opiskeluterveydenhuolto_p`
+
+##### Henkilöstön riittävyys
+
+-   Neuvolat: `r Neuvolat_h`
+-   Kouluterveydenhuolto: `r Kouluterveydenhuolto_h`
+-   Opiskeluterveydenhuolto: `r Opiskeluterveydenhuolto_h`
+
+### Sosiaalihuolto
+
+##### Palvelujen saatavuus
+
+-   Lapsiperheiden palvelut: `r Lapsiperheiden_palvelut_p`
+-   Lastensuojelu: `r Lastensuojelu_p`
+-   Perheoikeudelliset palvelut: `r Perheoikeudelliset_palvelut_p`
+
+##### Henkilöstön riittävyys
+
+-   Lapsiperheiden palvelut: `r Lapsiperheiden_palvelut_h`
+-   Lastensuojelu: `r Lastensuojelu_h`
+-   Perheoikeudelliset palvelut: `r Perheoikeudelliset_palvelut_h`
+
+# Tilannekuvakysely koronavirusepidemian vaikutuksista mielenterveyspalveluihin
+
+### Erikoissairaanhoito
+
+##### Palvelujen saatavuus
+
+-   Psykiatria: `r Psykiatria_p`
+
+##### Henkilöstön riittävyys
+
+-   Psykiatrinen poli&avo: `r Psykiatrinen_poli_h`
+-   Psykiatrinen vuodeosasto: `r Psykiatrinen_vuodeosasto_h`
+
+### Perusterveydenhuolto
+
+##### Palvelujen saatavuus
+
+-   Mielenterveys: `r Mielenterveys_p`
+
+##### Henkilöstön riittävyys
+
+-   Mielenterveys: `r Mielenterveys_h`
+
+##### Lasten mielenterveyspalveluiden saatavuus
+
+-   Perustasolla: `r Perustasolla_l`
+-   Erikoissairaanhoidossa: `r Erikoissairaanhoidossa_l`
+
+##### Nuorten mielenterveyspalvelujen saatavuus
+
+-   Perustasolla: `r Perustasolla_n`
+-   Erikoissairaanhoidossa: `r Erikoissairaanhoidossa_n`
+
+##### Aikuisten mielenterveyspalvelujen saatavuus
+
+-   Perustasolla: `r Perustasolla_a`
+-   Erikoissairaanhoidossa: `r Erikoissairaanhoidossa_a`

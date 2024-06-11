@@ -1,0 +1,12 @@
+---
+title: "TobriskCov analyses"
+author: "Zhi Zhou and Sebastián Peña"
+date: "October 3, 2023"
+output: 
+  pdf_document:
+    toc: yes 
+---
+
+```{r child = c('TobriskCov_1_Clean_V1003.Rmd', 'TobriskCov_2_test+main_V1003.Rmd', 'TobriskCov_3_Stratified_V1003.Rmd', 'TobriskCov_4_Sensitivity_V1003.Rmd')}
+# This file render all four TobriskCov analyses files together into a PDF file.
+```
