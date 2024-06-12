@@ -29,4 +29,4 @@ There are three folders in it. They are:
 
 ## About [my-learning](https://github.com/zauziii/my-learning)
 
-R is my most used tool. However, Python is also popular in the field of data analysis. In oreder to keep myself familiar with Python, I solved some virtual projects and pushed to this repository.
+R is my most used tool. However, Python is also popular in the field of data analysis. In order to keep myself familiar with Python, I solved some virtual projects and pushed to this repository. 
