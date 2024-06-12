@@ -1,6 +1,6 @@
-# Description of Sample Code
+# Description of Sample Codes
 
-Here is some words about the sample code.
+Here is some words about the sample codes.
 
 The code is consisted of three parts:
 1. PoDDyHePo-projection
@@ -9,7 +9,7 @@ The code is consisted of three parts:
 
 ## About [PoDDyHePo-projection](https://github.com/zauziii/PoDDyHePo-projection)
 
-It is the first R pacakge that I made. It was built some years ago, so the code may not be clean enough. The main purpose for this pacakge is to allow our audiences to produce something using the same method. 
+It is the first R pacakge that I made. It was built some years ago, so the codes may not be clean enough. The main purpose for this pacakge is to allow our audiences to produce something using the same method. 
 
 ## About [my-previous-works](https://github.com/zauziii/my-previous-works)
 
@@ -29,4 +29,6 @@ There are three folders in it. They are:
 
 ## About [my-learning](https://github.com/zauziii/my-learning)
 
-R is my most used tool. However, Python is also popular in the field of data analysis. In order to keep myself familiar with Python, I solved some virtual projects and pushed to this repository. 
+R is my most used tool. However, Python is also popular in the field of data analysis. In order to keep myself familiar with Python, I reproduced some virtual projects and pushed them to this repository. 
+
+[Analysis of LOL games](https://github.com/zauziii/my-learning/blob/master/LOLgames/LOLgames.ipynb) Could be a good start as the source [codes](https://www.kaggle.com/code/jonathanbouchet/lol-games-4-years-of-esport) were written in R. So in this work, I converted R codes to Python commands.
