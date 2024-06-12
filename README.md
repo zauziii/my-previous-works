@@ -31,4 +31,4 @@ There are three folders in it. They are:
 
 R is my most used tool. However, Python is also popular in the field of data analysis. In order to keep myself familiar with Python, I reproduced some virtual projects and pushed them to this repository. 
 
-[Analysis of LOL games](https://github.com/zauziii/my-learning/blob/master/LOLgames/LOLgames.ipynb) Could be a good start as the source [codes](https://www.kaggle.com/code/jonathanbouchet/lol-games-4-years-of-esport) were written in R. So in this work, I converted R codes to Python commands.
+[Analysis of LOL games](https://github.com/zauziii/my-learning/blob/master/LOLgames/LOLgames.ipynb) Could be a good start as the source [codes](https://www.kaggle.com/code/jonathanbouchet/lol-games-4-years-of-esport) were written in R. That is, I convert R codes to Python commands in this exercise.
