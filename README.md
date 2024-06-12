@@ -9,7 +9,7 @@ The code is consisted of three parts:
 
 ## About [PoDDyHePo-projection](https://github.com/zauziii/PoDDyHePo-projection)
 
-It is the first R pacakge that I made. It was built some years ago, so the code may not be clean and tidy. The main purpose for this pacakge is to allow our audiences to produce something using the same method. 
+It is the first R pacakge that I made. It was built some years ago, so the code may not be clean enough. The main purpose for this pacakge is to allow our audiences to produce something using the same method. 
 
 ## About [my-previous-works](https://github.com/zauziii/my-previous-works)
 
