@@ -11,6 +11,8 @@ The code is consisted of three parts:
 
 It is the first R pacakge that I made. It was built some years ago, so the codes may not be clean enough. The main purpose for this pacakge is to allow our audiences to produce something using the same method. Results can be found via [Development of non-communicable disease risk factors in Finland: projections up to 2040](https://doi.org/10.1177/14034948221110025).
 
+Another task that is similar to this - [Work ability trends 2000-2020 and birth-cohort projections until 2040 in Finland](https://doi.org/10.1177/14034948241228155).
+
 ## About [my-previous-works](https://github.com/zauziii/my-previous-works)
 
 There are three folders in it. They are:
